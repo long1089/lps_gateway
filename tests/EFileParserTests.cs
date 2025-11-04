@@ -16,7 +16,8 @@ public class EFileParserTests
         mockRepo.Setup(r => r.IsFileProcessedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(false);
         
-        var parser = new EFileParser(mockRepo.Object);
+        var mockLogger = new Mock<Microsoft.Extensions.Logging.ILogger<EFileParser>>();
+        var parser = new EFileParser(mockRepo.Object, mockLogger.Object);
 
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var gbk = Encoding.GetEncoding("GBK");
@@ -61,7 +62,8 @@ public class EFileParserTests
             })
             .Returns(Task.CompletedTask);
         
-        var parser = new EFileParser(mockRepo.Object);
+        var mockLogger = new Mock<Microsoft.Extensions.Logging.ILogger<EFileParser>>();
+        var parser = new EFileParser(mockRepo.Object, mockLogger.Object);
 
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var gbk = Encoding.GetEncoding("GBK");
@@ -90,7 +92,8 @@ public class EFileParserTests
         mockRepo.Setup(r => r.IsFileProcessedAsync("1001", "TYPE_90", "test.txt"))
             .ReturnsAsync(true);
         
-        var parser = new EFileParser(mockRepo.Object);
+        var mockLogger = new Mock<Microsoft.Extensions.Logging.ILogger<EFileParser>>();
+        var parser = new EFileParser(mockRepo.Object, mockLogger.Object);
         var stream = new MemoryStream(Encoding.UTF8.GetBytes("dummy content"));
 
         // Act
@@ -109,7 +112,8 @@ public class EFileParserTests
         mockRepo.Setup(r => r.IsFileProcessedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(false);
         
-        var parser = new EFileParser(mockRepo.Object);
+        var mockLogger = new Mock<Microsoft.Extensions.Logging.ILogger<EFileParser>>();
+        var parser = new EFileParser(mockRepo.Object, mockLogger.Object);
 
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var gbk = Encoding.GetEncoding("GBK");
