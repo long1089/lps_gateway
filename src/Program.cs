@@ -29,7 +29,7 @@ builder.Services.AddScoped<ISqlSugarClient>(provider =>
 // Register application services
 builder.Services.AddScoped<IEFileRepository, EFileRepository>();
 builder.Services.AddScoped<IEFileParser, EFileParser>();
-builder.Services.AddSingleton<IFileTransferManager, FileTransferManager>();
+builder.Services.AddScoped<IFileTransferManager, FileTransferManager>();
 
 // Register and start TCP link layer
 builder.Services.AddSingleton<ILinkLayer>(provider =>
@@ -53,12 +53,13 @@ app.MapControllers();
 
 // Start TCP Link Layer
 var linkLayer = app.Services.GetRequiredService<ILinkLayer>();
-var fileTransferManager = app.Services.GetRequiredService<IFileTransferManager>();
 
 linkLayer.DataReceived += async (sender, data) =>
 {
     try
     {
+        using var scope = app.Services.CreateScope();
+        var fileTransferManager = scope.ServiceProvider.GetRequiredService<IFileTransferManager>();
         await fileTransferManager.ProcessAsduAsync(data);
     }
     catch (Exception ex)
