@@ -1,34 +1,66 @@
--- Database schema for LPS Gateway (OpenGauss/PostgreSQL)
+-- Database schema for IEC-102 E file reception system
+-- Compatible with OpenGauss/PostgreSQL
 
--- Table to track received E-files
-CREATE TABLE IF NOT EXISTS received_efiles (
-    id SERIAL PRIMARY KEY,
-    source_identifier VARCHAR(255) NOT NULL UNIQUE,
-    received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    status VARCHAR(50) DEFAULT 'processed'
+-- Create main table for tracking received E files
+CREATE TABLE IF NOT EXISTS RECEIVED_EFILES (
+    Id SERIAL PRIMARY KEY,
+    CommonAddr VARCHAR(100) NOT NULL,
+    TypeId VARCHAR(50) NOT NULL,
+    FileName VARCHAR(100) NOT NULL,
+    ReceivedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FileSize INTEGER NOT NULL,
+    Status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
+    ErrorMessage VARCHAR(500),
+    CONSTRAINT uk_efile UNIQUE (CommonAddr, TypeId, FileName)
 );
 
-CREATE INDEX idx_received_efiles_source ON received_efiles(source_identifier);
-CREATE INDEX idx_received_efiles_status ON received_efiles(status);
+CREATE INDEX idx_received_at ON RECEIVED_EFILES(ReceivedAt);
+CREATE INDEX idx_status ON RECEIVED_EFILES(Status);
 
--- Example info table (created dynamically by application)
--- CREATE TABLE IF NOT EXISTS {tablename}_info (
---     id SERIAL PRIMARY KEY,
---     key VARCHAR(255) NOT NULL,
---     value TEXT,
---     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
--- );
+-- Example INFO table (for demonstration purposes)
+-- These tables are created based on the E file content
+-- The following is an example schema for *_INFO tables
 
--- Example data table (created dynamically by application)
--- CREATE TABLE IF NOT EXISTS {tablename}_data (
---     id SERIAL PRIMARY KEY,
---     -- columns are created dynamically based on E-file content
---     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
--- );
+CREATE TABLE IF NOT EXISTS STATION_INFO (
+    ID VARCHAR(50) PRIMARY KEY,
+    Name VARCHAR(100),
+    Location VARCHAR(200),
+    Latitude DECIMAL(10, 6),
+    Longitude DECIMAL(10, 6),
+    Capacity DECIMAL(10, 2),
+    Status VARCHAR(20),
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-COMMENT ON TABLE received_efiles IS 'Tracks processed E-files to prevent duplicate processing';
-COMMENT ON COLUMN received_efiles.source_identifier IS 'Unique identifier for the E-file (address+type or filename)';
-COMMENT ON COLUMN received_efiles.received_at IS 'When the E-file was first received';
-COMMENT ON COLUMN received_efiles.processed_at IS 'When the E-file was successfully processed';
-COMMENT ON COLUMN received_efiles.status IS 'Processing status: processed, error, etc.';
+CREATE TABLE IF NOT EXISTS DEVICE_INFO (
+    ID VARCHAR(50) PRIMARY KEY,
+    StationId VARCHAR(50),
+    DeviceType VARCHAR(50),
+    Model VARCHAR(100),
+    Manufacturer VARCHAR(100),
+    InstallDate DATE,
+    Status VARCHAR(20),
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Example data table (for non-INFO tables, bulk insert)
+CREATE TABLE IF NOT EXISTS ENERGY_DATA (
+    ID SERIAL PRIMARY KEY,
+    StationId VARCHAR(50),
+    Timestamp TIMESTAMP,
+    ActivePower DECIMAL(10, 2),
+    ReactivePower DECIMAL(10, 2),
+    Voltage DECIMAL(10, 2),
+    Current DECIMAL(10, 2),
+    Frequency DECIMAL(5, 2),
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_energy_station ON ENERGY_DATA(StationId);
+CREATE INDEX idx_energy_timestamp ON ENERGY_DATA(Timestamp);
+
+-- Comments
+COMMENT ON TABLE RECEIVED_EFILES IS 'Tracks all received and processed E files';
+COMMENT ON TABLE STATION_INFO IS 'Station information, supports upsert by ID';
+COMMENT ON TABLE DEVICE_INFO IS 'Device information, supports upsert by ID';
+COMMENT ON TABLE ENERGY_DATA IS 'Energy measurement data, bulk insert only';

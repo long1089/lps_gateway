@@ -1,272 +1,283 @@
-# LPS Gateway - IEC-102 E-file Reception and Processing
+# LPS Gateway - IEC-102 Extended E File Reception System
 
-This project implements a .NET 6 WebAPI for receiving and processing IEC-102 E-files from power stations.
+This project implements an IEC-102 extended E file reception, parsing, storage, and reporting system running on .NET 8 WebAPI with OpenGauss database and SqlSugar ORM.
 
 ## Features
 
-- **IEC-102 Link Layer**: TCP-based implementation with frame parsing (0x10 fixed and 0x68 variable frames)
-- **ASDU Management**: Support for TYPE IDs 0x90-0xA8 with custom mapping
-- **E-file Parser**: GBK-encoded file parsing with table/data extraction
-- **Database Storage**: SqlSugar-based OpenGauss/PostgreSQL repository
-- **RESTful API**: File upload endpoint for manual E-file submission
-- **Master Simulator**: Testing tool to simulate IEC-102 E-file transfers
+- **WebAPI Support**: E file upload and trigger reporting endpoints
+- **Link Layer**: TCP-based link layer compatible with IEC-102 protocol
+- **ASDU Management**: Support for custom Type IDs (0x90-0xA8) with ASDU encoding/decoding
+- **File Transfer**: Multi-frame file transfer with automatic reassembly
+- **E File Parser**: GBK encoding support, table-based parsing with upsert/insert logic
+- **Database**: OpenGauss/PostgreSQL with SqlSugar ORM
+- **Testing**: Unit tests with xUnit and Moq
+- **Tools**: Master station simulator for integration testing
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│           LPS Gateway WebAPI                │
-├─────────────────────────────────────────────┤
-│                                             │
-│  ┌──────────────┐      ┌─────────────────┐ │
-│  │ EFileController│────▶│  EFileParser    │ │
-│  └──────────────┘      └─────────────────┘ │
-│                              │              │
-│  ┌──────────────────┐        │              │
-│  │FileTransferManager│        │              │
-│  │  (IEC-102 Server) │        ▼              │
-│  └──────────────────┘   ┌──────────────┐    │
-│         │               │EFileRepository│    │
-│         ▼               └──────────────┘    │
-│  ┌──────────────┐             │             │
-│  │ TcpLinkLayer │             ▼             │
-│  │(IEC-102 Link)│      OpenGauss/PostgreSQL │
-│  └──────────────┘                           │
-└─────────────────────────────────────────────┘
+src/
+├── Controllers/
+│   └── EFileController.cs      # WebAPI endpoints
+├── Data/
+│   ├── Models/
+│   │   └── ReceivedEfile.cs    # Data model
+│   ├── IEFileRepository.cs     # Repository interface
+│   └── EFileRepository.cs      # Repository implementation
+├── Lib60870/
+│   ├── ILinkLayer.cs           # Link layer interface
+│   ├── TcpLinkLayer.cs         # TCP link layer implementation
+│   ├── AsduManager.cs          # ASDU encoding/decoding
+│   └── Mapping.cs              # Type ID mapping
+├── Services/
+│   ├── IEFileParser.cs         # Parser interface
+│   ├── EFileParser.cs          # E file parser implementation
+│   ├── IFileTransferManager.cs # File transfer interface
+│   └── FileTransferManager.cs  # File transfer manager
+└── Program.cs                  # Application entry point
+
+db/
+└── schema.sql                  # Database schema
+
+tests/
+└── EFileParserTests.cs         # Unit tests
+
+tools/
+└── MasterSimulator/
+    └── Program.cs              # Master station simulator
 ```
 
 ## Prerequisites
 
-- .NET 6.0 SDK (or higher with .NET 6.0 targeting)
+- .NET 8 SDK
 - OpenGauss or PostgreSQL database
-- (Optional) Docker for containerized database
+- (Optional) Docker for running database locally
 
 ## Database Setup
 
-1. Install OpenGauss or PostgreSQL:
-```bash
-# Using Docker
-docker run -d \
-  --name lpsgateway-db \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=lpsgateway \
-  -p 5432:5432 \
-  postgres:15
-```
+### Option 1: Using PostgreSQL/OpenGauss directly
 
-2. Initialize the schema:
+1. Install PostgreSQL or OpenGauss
+2. Create database:
+   ```bash
+   createdb lps_gateway
+   ```
+
+3. Run schema migration:
+   ```bash
+   psql -d lps_gateway -f db/schema.sql
+   ```
+
+### Option 2: Using Docker
+
 ```bash
-psql -h localhost -U postgres -d lpsgateway -f db/schema.sql
+# Run PostgreSQL in Docker
+docker run --name lps-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=lps_gateway -p 5432:5432 -d postgres:15
+
+# Apply schema
+docker exec -i lps-postgres psql -U postgres -d lps_gateway < db/schema.sql
 ```
 
 ## Configuration
 
-Edit `src/LPSGateway/appsettings.json`:
+Update connection string in `src/appsettings.json`:
 
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=lpsgateway;Username=postgres;Password=YOUR_PASSWORD"
+    "DefaultConnection": "Host=localhost;Port=5432;Database=lps_gateway;Username=postgres;Password=postgres"
   },
-  "Iec102": {
-    "Host": "0.0.0.0",
+  "TcpLinkLayer": {
     "Port": 2404
   }
 }
 ```
 
-## Running Locally
+## Running the Application
 
-### 1. Start the Gateway Service
+### 1. Build the solution
 
 ```bash
-cd src/LPSGateway
+dotnet build
+```
+
+### 2. Run the WebAPI
+
+```bash
+cd src
 dotnet run
 ```
 
-The service will:
-- Start an HTTP API on `https://localhost:5001` (or configured port)
-- Start an IEC-102 TCP server on port `2404` (configurable)
-- Accept both protocol-based and HTTP-based E-file submissions
+The API will start on `http://localhost:5000` (and `https://localhost:5001` for HTTPS).
 
-### 2. Test with Master Simulator
+Swagger UI is available at: `http://localhost:5000/swagger`
 
-In a separate terminal, run the simulator to send test E-files via IEC-102:
+### 3. Run the Master Simulator (for testing)
+
+In a separate terminal:
 
 ```bash
 cd tools/MasterSimulator
 dotnet run
 ```
 
-Or specify custom host/port:
+Or connect to a different host/port:
 
 ```bash
-dotnet run -- 127.0.0.1 2404
+dotnet run -- hostname 2404
 ```
 
-The simulator will:
-- Connect to the IEC-102 server
-- Send a sample E-file split across two frames
-- Demonstrate multi-frame buffering and COT=0x07 end-of-transfer signaling
-
-### 3. Upload via HTTP API
-
-You can also upload E-files directly via the REST API:
-
-```bash
-curl -X POST http://localhost:5000/api/efile/upload \
-  -F "file=@/path/to/efile.txt" \
-  -H "Content-Type: multipart/form-data"
-```
+The simulator provides options to:
+1. Send single-frame E file data
+2. Send multi-frame E file data
+3. Send custom ASDU frames
 
 ## Running Tests
+
+```bash
+cd tests
+dotnet test
+```
+
+Or run from the solution root:
 
 ```bash
 dotnet test
 ```
 
-**Note:** Tests require .NET 6.0 runtime. If you encounter runtime errors, ensure .NET 6.0 is installed or update the test project to target your available runtime.
-
-## Project Structure
-
-```
-lps_gateway/
-├── src/
-│   └── LPSGateway/
-│       ├── Controllers/         # API endpoints
-│       ├── Data/               # Repository and models
-│       ├── Lib60870/           # IEC-102 protocol implementation
-│       ├── Services/           # Business logic services
-│       └── Program.cs          # Application entry point
-├── tests/
-│   └── LPSGateway.Tests/       # xUnit tests
-├── tools/
-│   └── MasterSimulator/        # IEC-102 master simulator
-└── db/
-    └── schema.sql              # Database schema
-```
-
-## E-file Format
-
-E-files are GBK-encoded text files with the following structure:
-
-```
-<table_name>
-@header_key1	header_value1
-@header_key2	header_value2
-#data_col1	data_col2	data_col3
-#data_col1	data_col2	-99
-```
-
-- Lines starting with `<>` define table blocks
-- Lines starting with `@` define header metadata
-- Lines starting with `#` define data rows (tab-separated)
-- `-99` values are mapped to `NULL` in the database
-
-## IEC-102 Protocol Details
-
-### Frame Types
-
-- **Fixed Frame (0x10)**: Short commands without user data
-  - Format: `10 C A A CS 16`
-  
-- **Variable Frame (0x68)**: Data transfer frames
-  - Format: `68 L L 68 C A A DATA CS 16`
-
-### ASDU Structure
-
-- **Type ID**: 0x90-0xA8 (E-file types)
-- **Cause of Transmission (COT)**:
-  - `0x06`: Data transfer in progress
-  - `0x07`: End of transfer (triggers processing)
-
-### Type ID Mappings
-
-| Type ID | Table Name         |
-|---------|--------------------|
-| 0x90    | basic_info         |
-| 0x91    | power_quality      |
-| 0x92    | voltage_data       |
-| 0x93    | current_data       |
-| 0x94    | power_data         |
-| 0x95    | energy_data        |
-| ...     | ...                |
-
-See `src/LPSGateway/Lib60870/Mapping.cs` for complete mapping.
-
 ## API Endpoints
 
-### POST /api/efile/upload
+### Upload E File
 
-Upload an E-file for processing.
-
-**Request:**
-```
+```http
+POST /api/efile/upload
 Content-Type: multipart/form-data
-file: <binary file data>
+
+file: <file>
+commonAddr: 1001
+typeId: TYPE_90
 ```
 
-**Response:**
-```json
+### Trigger Report
+
+```http
+POST /api/efile/trigger-report
+Content-Type: application/json
+
 {
-  "success": true,
-  "message": "File processed successfully",
-  "sourceIdentifier": "efile.txt_20241104070000"
+  "asduData": [0x90, 0x10, 0x07, 0xE9, 0x03, ...]
 }
 ```
 
-### GET /api/efile/health
+## E File Format
 
-Health check endpoint.
+E files use the following format:
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-11-04T07:00:00Z"
-}
+```
+<table> TABLE_NAME
+@Column1	Column2	Column3
+#Value1	Value2	Value3
+#Value1	-99	Value3
 ```
 
-## Development
+- Lines starting with `<table>` define table name
+- Lines starting with `@` define column headers (tab-separated)
+- Lines starting with `#` contain data rows (tab-separated)
+- `-99` is interpreted as NULL
+- Tables ending with `_INFO` use upsert logic (based on ID field)
+- Other tables use bulk insert
 
-### Adding New Table Mappings
+## ASDU Format
 
-Edit `src/LPSGateway/Lib60870/Mapping.cs` to add new TYPE ID mappings:
+Simple ASDU format (not full IEC-102 implementation):
 
-```csharp
-{ 0xA9, "new_table_name" }
+```
+Byte 0: Type ID (0x90-0xA8 for E files)
+Byte 1: Payload length + 2
+Byte 2: Cause of Transmission (0x06=intermediate, 0x07=last frame)
+Byte 3-4: Common Address (little-endian)
+Byte 5+: Payload
 ```
 
-### Database Schema
+## Multi-Frame File Transfer
 
-The application creates tables dynamically:
-- `{table_name}_info`: Key-value pairs for header metadata
-- `{table_name}_data`: Columns based on E-file content
+For large files:
+1. File is split into multiple ASDU frames
+2. Each frame has COT=0x06 (intermediate) except the last
+3. Last frame has COT=0x07 (file complete)
+4. Frames are reassembled by CommonAddr + TypeId
+5. Complete file is parsed and saved to database
+
+## Testing Workflow
+
+1. Start the database
+2. Apply schema with `db/schema.sql`
+3. Start the WebAPI: `cd src && dotnet run`
+4. Start the simulator: `cd tools/MasterSimulator && dotnet run`
+5. Use simulator option 1 or 2 to send test data
+6. Check database for received files:
+   ```sql
+   SELECT * FROM RECEIVED_EFILES;
+   SELECT * FROM STATION_INFO;
+   ```
+
+## Database Tables
+
+### RECEIVED_EFILES
+Tracks all received E files with status and error information.
+
+### STATION_INFO (Example)
+Station information table with upsert support.
+
+### DEVICE_INFO (Example)
+Device information table with upsert support.
+
+### ENERGY_DATA (Example)
+Energy measurement data with bulk insert.
+
+## Implementation Notes
+
+### Current Implementation
+- Basic TCP link layer (no full IEC-102 frame format)
+- Simple ASDU encoding/decoding
+- GBK encoding support for E files
+- Tab-separated value parsing
+- Upsert for *_INFO tables, insert for others
+- Multi-frame reassembly
+
+### Production Considerations
+- Full IEC-102 frame parsing (0x10/0x68 frames, control fields, checksums)
+- Sequence numbers and retransmission
+- Transaction management and concurrency
+- Error recovery and resilience
+- Complete field type mapping
+- Authentication and authorization
+- Logging and monitoring
+- Performance optimization
+
+### Library Alternatives
+If lib60870.NET is available and preferred, replace `TcpLinkLayer` implementation with lib60870.NET API while keeping the same `ILinkLayer` interface.
 
 ## Troubleshooting
 
-### Connection Refused
+### Connection refused
+- Ensure the WebAPI is running
+- Check the port configuration (default: 2404)
+- Verify firewall settings
 
-If the simulator can't connect, ensure:
-1. The gateway is running
-2. Firewall allows port 2404
-3. Configuration matches (host/port)
+### Database connection errors
+- Verify OpenGauss/PostgreSQL is running
+- Check connection string in appsettings.json
+- Ensure database exists and schema is applied
 
-### Database Errors
-
-Check:
-1. Database is running and accessible
-2. Connection string is correct
-3. Database user has CREATE TABLE permissions
-
-### GBK Encoding Issues
-
-The application registers the GBK encoding provider on startup. If you encounter encoding errors, ensure the E-file is actually GBK-encoded.
+### GBK encoding issues
+- Ensure System.Text.Encoding.CodePages package is installed
+- Verify `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)` is called
 
 ## License
 
-MIT License
+MIT
 
 ## Contributing
 
-Please submit issues and pull requests to the GitHub repository.
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
