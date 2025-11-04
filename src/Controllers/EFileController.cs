@@ -29,6 +29,20 @@ public class EFileController : ControllerBase
     }
 
     /// <summary>
+    /// 清理用户输入用于日志记录（防止日志注入攻击）
+    /// </summary>
+    /// <param name="input">用户输入</param>
+    /// <returns>清理后的字符串</returns>
+    private static string SanitizeForLog(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return string.Empty;
+        
+        // 移除换行符和控制字符
+        return System.Text.RegularExpressions.Regex.Replace(input, @"[\r\n\t\x00-\x1F]", "");
+    }
+
+    /// <summary>
     /// 上传 E 文件
     /// </summary>
     /// <param name="file">要上传的文件</param>
@@ -42,7 +56,7 @@ public class EFileController : ControllerBase
     public async Task<IActionResult> Upload([FromForm] IFormFile file, [FromForm] string commonAddr, [FromForm] string typeId)
     {
         _logger.LogInformation("接收到文件上传请求: FileName={FileName}, CommonAddr={CommonAddr}, TypeId={TypeId}, Size={Size}",
-            file?.FileName, commonAddr, typeId, file?.Length ?? 0);
+            SanitizeForLog(file?.FileName), SanitizeForLog(commonAddr), SanitizeForLog(typeId), file?.Length ?? 0);
 
         if (file == null || file.Length == 0)
         {

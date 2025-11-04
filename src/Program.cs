@@ -31,6 +31,8 @@ if (string.IsNullOrEmpty(connectionString))
 builder.Services.AddScoped<ISqlSugarClient>(provider =>
 {
     var logger = provider.GetRequiredService<ILogger<Program>>();
+    // 注意：此处的 maskedConnectionString 已经将密码替换为 ***，仅用于日志记录
+    // 实际的数据库连接使用原始的 connectionString（包含密码）
     var maskedConnectionString = System.Text.RegularExpressions.Regex.Replace(connectionString, @"Password=[^;]*", "Password=***");
     logger.LogInformation("配置 SqlSugar 连接: {ConnectionString}", maskedConnectionString);
     

@@ -36,6 +36,20 @@ public class EFileParser : IEFileParser
     }
 
     /// <summary>
+    /// 清理用户输入用于日志记录（防止日志注入攻击）
+    /// </summary>
+    /// <param name="input">用户输入</param>
+    /// <returns>清理后的字符串</returns>
+    private static string SanitizeForLog(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return string.Empty;
+        
+        // 移除换行符和控制字符
+        return System.Text.RegularExpressions.Regex.Replace(input, @"[\r\n\t\x00-\x1F]", "");
+    }
+
+    /// <summary>
     /// 配置列映射（从文件列名到数据库列名）
     /// </summary>
     /// <param name="tableName">表名</param>
@@ -67,7 +81,7 @@ public class EFileParser : IEFileParser
     public async Task ParseAndSaveAsync(Stream fileStream, string commonAddr, string typeId, string fileName)
     {
         _logger.LogInformation("开始解析文件: {FileName}, CommonAddr={CommonAddr}, TypeId={TypeId}", 
-            fileName, commonAddr, typeId);
+            SanitizeForLog(fileName), SanitizeForLog(commonAddr), SanitizeForLog(typeId));
         
         try
         {

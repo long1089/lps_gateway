@@ -25,6 +25,20 @@ public class EFileRepository : IEFileRepository
     }
 
     /// <summary>
+    /// 清理用户输入用于日志记录（防止日志注入攻击）
+    /// </summary>
+    /// <param name="input">用户输入</param>
+    /// <returns>清理后的字符串</returns>
+    private static string SanitizeForLog(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return string.Empty;
+        
+        // 移除换行符和控制字符
+        return System.Text.RegularExpressions.Regex.Replace(input, @"[\r\n\t\x00-\x1F]", "");
+    }
+
+    /// <summary>
     /// 检查文件是否已处理
     /// </summary>
     /// <param name="commonAddr">公共地址</param>
@@ -34,7 +48,7 @@ public class EFileRepository : IEFileRepository
     public async Task<bool> IsFileProcessedAsync(string commonAddr, string typeId, string fileName)
     {
         _logger.LogDebug("检查文件是否已处理: {FileName}, CommonAddr={CommonAddr}, TypeId={TypeId}", 
-            fileName, commonAddr, typeId);
+            SanitizeForLog(fileName), SanitizeForLog(commonAddr), SanitizeForLog(typeId));
         
         var count = await _db.Queryable<ReceivedEfile>()
             .Where(x => x.CommonAddr == commonAddr && x.TypeId == typeId && x.FileName == fileName)
