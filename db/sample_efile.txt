@@ -1,0 +1,15 @@
+<table> STATION_INFO
+@ID	Name	Location	Capacity	Status
+#S001	测试站点1	北京市	150.5	Active
+#S002	测试站点2	上海市	200.0	Active
+#S003	测试站点3	广州市	-99	Inactive
+<table> DEVICE_INFO
+@ID	StationId	DeviceType	Model	Status
+#D001	S001	Transformer	TX-1000	Active
+#D002	S001	Breaker	BR-500	Active
+#D003	S002	Transformer	TX-2000	-99
+<table> ENERGY_DATA
+@StationId	Timestamp	ActivePower	ReactivePower	Voltage	Current
+#S001	2025-01-01 10:00:00	145.2	30.5	220.5	150.0
+#S002	2025-01-01 10:00:00	195.8	40.2	221.0	180.0
+#S003	2025-01-01 10:00:00	-99	-99	219.5	-99
