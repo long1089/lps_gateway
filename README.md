@@ -245,18 +245,259 @@ Energy measurement data with bulk insert.
 - Upsert for *_INFO tables, insert for others
 - Multi-frame reassembly
 
-### Production Considerations
-- Full IEC-102 frame parsing (0x10/0x68 frames, control fields, checksums)
-- Sequence numbers and retransmission
-- Transaction management and concurrency
-- Error recovery and resilience
-- Complete field type mapping
-- Authentication and authorization
-- Logging and monitoring
-- Performance optimization
+### 增强功能（v2.0）
 
-### Library Alternatives
-If lib60870.NET is available and preferred, replace `TcpLinkLayer` implementation with lib60870.NET API while keeping the same `ILinkLayer` interface.
+本版本实现了以下生产级增强：
+
+#### ✅ 完整 IEC-102 帧解析
+- 支持固定长度帧（0x10）、可变长度帧（0x68）和单字节确认帧（0xE5）
+- 控制域（ControlField）解析：PRM/FCB/FCV/FC/ACD/DFC 位
+- 校验和验证和帧完整性检查
+
+#### ✅ FCB/FCV 帧计数逻辑
+- 主站/从站 FCB 状态维护
+- 新一轮消息时切换 FCB，重传时不切换
+- 支持检测重复帧
+
+#### ✅ 超时与重传策略
+- 可配置超时时间（默认 5 秒）
+- 可配置最大重传次数（默认 3 次）
+- 超时和重传事件暴露给上层
+- 详细的超时和重传日志
+
+#### ✅ 并发安全性
+- ConcurrentDictionary 用于多连接管理
+- SemaphoreSlim 用于发送同步
+- 异步队列处理
+- 安全的资源释放
+
+#### ✅ 字段类型精确转换
+- 支持 int、double、decimal、datetime、bool、string 类型转换
+- 可配置的列名映射
+- 转换失败时记录错误并置 NULL 或默认值
+- 详细的类型转换日志
+
+#### ✅ 完整的日志记录
+- ILogger 集成到所有核心组件
+- Info/Debug/Warning/Error 级别日志
+- 帧收发、ASDU 解析、文件合并、数据库操作日志
+- 超时、重传、错误事件日志
+
+#### ✅ lib60870.NET 封装支持
+- Lib60870Wrapper 工厂模式
+- 通过 UseLib60870 配置切换
+- 自动回退到 TcpLinkLayer
+- 保持 ILinkLayer 接口兼容
+
+#### ✅ 中文 XML 文档注释
+- 所有类、方法、属性添加完整中文注释
+- 参数和返回值说明
+- 使用示例和注意事项
+
+## 配置说明
+
+### appsettings.json 配置项
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "LpsGateway": "Debug"
+    }
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=lps_gateway;Username=postgres;Password=postgres"
+  },
+  "Lib60870": {
+    "UseLib60870": false,        // 是否使用 lib60870.NET（默认 false）
+    "Port": 2404,                // TCP 监听端口
+    "TimeoutMs": 5000,           // 超时时间（毫秒）
+    "MaxRetries": 3,             // 最大重传次数
+    "InitialFcb": false,         // FCB 初始值
+    "ConnectionString": ""       // 数据库连接字符串（可选，优先级高于 ConnectionStrings.DefaultConnection）
+  }
+}
+```
+
+### 配置项说明
+
+#### UseLib60870
+- **类型**: bool
+- **默认值**: false
+- **说明**: 是否尝试使用 lib60870.NET 库。如果设置为 true 但库不可用，将自动回退到 TcpLinkLayer 实现。
+
+#### Port
+- **类型**: int
+- **默认值**: 2404
+- **说明**: TCP 链路层监听端口，IEC-102 标准端口为 2404。
+
+#### TimeoutMs
+- **类型**: int
+- **默认值**: 5000
+- **说明**: 发送帧后等待响应的超时时间（毫秒）。超时后将触发重传。
+
+#### MaxRetries
+- **类型**: int
+- **默认值**: 3
+- **说明**: 最大重传次数。达到此次数后将放弃发送并记录错误。
+
+#### InitialFcb
+- **类型**: bool
+- **默认值**: false
+- **说明**: 帧计数位（FCB）的初始值。每次发送新一轮消息时会切换此位。
+
+#### ConnectionString
+- **类型**: string
+- **默认值**: ""
+- **说明**: OpenGauss/PostgreSQL 数据库连接字符串。如果配置了此项，将优先使用，否则使用 ConnectionStrings.DefaultConnection。
+
+### 日志级别配置
+
+推荐的日志级别：
+- **开发环境**: Debug
+- **测试环境**: Information
+- **生产环境**: Warning
+
+可以针对不同命名空间配置不同级别：
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "LpsGateway.Lib60870": "Debug",           // 链路层详细日志
+      "LpsGateway.Services": "Information",      // 服务层日志
+      "LpsGateway.Data": "Information"           // 数据层日志
+    }
+  }
+}
+```
+
+## 使用 lib60870.NET
+
+如果要使用 lib60870.NET v2.3.0 库：
+
+1. 安装 lib60870.NET NuGet 包：
+   ```bash
+   cd src
+   dotnet add package lib60870.NET --version 2.3.0
+   ```
+
+2. 在 `appsettings.json` 中启用：
+   ```json
+   {
+     "Lib60870": {
+       "UseLib60870": true
+     }
+   }
+   ```
+
+3. 如果库不可用，系统会自动回退到 TcpLinkLayer 实现，并在日志中记录警告。
+
+## 运行模拟器与测试
+
+### 运行主站模拟器
+
+模拟器用于测试文件传输功能：
+
+```bash
+cd tools/MasterSimulator
+dotnet run
+```
+
+或连接到不同的主机和端口：
+```bash
+dotnet run -- <hostname> <port>
+```
+
+模拟器提供以下选项：
+1. 发送单帧 E 文件数据
+2. 发送多帧 E 文件数据（测试分片重组）
+3. 发送自定义 ASDU 帧
+4. 退出
+
+### FCB/FCV 测试场景
+
+测试 FCB/FCV 功能：
+
+1. 启动 WebAPI 和模拟器
+2. 发送第一个多帧文件，观察 FCB 状态
+3. 模拟超时（暂停网络），观察重传行为
+4. 发送第二个多帧文件，验证 FCB 切换
+
+日志示例：
+```
+[Info] 接收到有效帧: Variable Frame: Master: FC=03, FCB=False, FCV=True, Addr=0001, DataLen=256
+[Debug] 设置 FCB 状态: 1001_144 -> False
+[Info] 接收到最后一帧: 1001_144，总分片数: 3
+[Debug] 切换 FCB 状态: endpoint -> True
+```
+
+### 超时与重传测试
+
+测试超时重传机制：
+
+1. 配置较短的超时时间（如 2000ms）：
+   ```json
+   {
+     "Lib60870": {
+       "TimeoutMs": 2000,
+       "MaxRetries": 2
+     }
+   }
+   ```
+
+2. 启动应用，发送数据但不响应
+3. 观察日志中的超时和重传记录
+
+日志示例：
+```
+[Warning] 发送超时（2000ms），尝试 1/3
+[Warning] 重传帧，尝试 1/2
+[Error] 发送失败：已达到最大重传次数 2
+```
+
+## 字段类型转换配置
+
+在代码中配置列类型转换：
+
+```csharp
+var parser = serviceProvider.GetRequiredService<IEFileParser>() as EFileParser;
+
+// 配置 STATION_INFO 表的列类型
+parser.ConfigureColumnTypes("STATION_INFO", new Dictionary<string, Type>
+{
+    { "Latitude", typeof(decimal) },
+    { "Longitude", typeof(decimal) },
+    { "Capacity", typeof(decimal) }
+});
+
+// 配置列名映射（从文件列名到数据库列名）
+parser.ConfigureColumnMapping("ENERGY_DATA", new Dictionary<string, string>
+{
+    { "站点ID", "StationId" },
+    { "有功功率", "ActivePower" },
+    { "无功功率", "ReactivePower" }
+});
+```
+
+## Production Considerations
+
+### 已实现
+- ✅ 完整 IEC-102 帧解析（0x10/0x68 frames, control fields, checksums）
+- ✅ 序列号和重传机制
+- ✅ 事务管理和并发控制
+- ✅ 完整字段类型映射
+- ✅ 日志记录和监控
+
+### 仍需考虑
+- 身份验证和授权
+- 性能优化（批量操作、连接池调优）
+- 高可用性和灾难恢复
+- 监控告警集成（Prometheus/Grafana）
+- API 速率限制
 
 ## Troubleshooting
 
