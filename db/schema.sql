@@ -1,7 +1,7 @@
--- Database schema for IEC-102 E file reception system
--- Compatible with OpenGauss/PostgreSQL
+-- IEC-102 E 文件接收系统数据库模式
+-- 兼容 OpenGauss/PostgreSQL
 
--- Create main table for tracking received E files
+-- 创建主表用于跟踪已接收的 E 文件
 CREATE TABLE IF NOT EXISTS RECEIVED_EFILES (
     Id SERIAL PRIMARY KEY,
     CommonAddr VARCHAR(100) NOT NULL,
@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS RECEIVED_EFILES (
 CREATE INDEX idx_received_at ON RECEIVED_EFILES(ReceivedAt);
 CREATE INDEX idx_status ON RECEIVED_EFILES(Status);
 
--- Example INFO table (for demonstration purposes)
--- These tables are created based on the E file content
--- The following is an example schema for *_INFO tables
+-- 示例 INFO 表（用于演示）
+-- 这些表是根据 E 文件内容创建的
+-- 以下是 *_INFO 表的示例模式
 
 CREATE TABLE IF NOT EXISTS STATION_INFO (
     ID VARCHAR(50) PRIMARY KEY,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS DEVICE_INFO (
     UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Example data table (for non-INFO tables, bulk insert)
+-- 示例数据表（用于非 INFO 表，批量插入）
 CREATE TABLE IF NOT EXISTS ENERGY_DATA (
     ID SERIAL PRIMARY KEY,
     StationId VARCHAR(50),
@@ -59,8 +59,44 @@ CREATE TABLE IF NOT EXISTS ENERGY_DATA (
 CREATE INDEX idx_energy_station ON ENERGY_DATA(StationId);
 CREATE INDEX idx_energy_timestamp ON ENERGY_DATA(Timestamp);
 
--- Comments
-COMMENT ON TABLE RECEIVED_EFILES IS 'Tracks all received and processed E files';
-COMMENT ON TABLE STATION_INFO IS 'Station information, supports upsert by ID';
-COMMENT ON TABLE DEVICE_INFO IS 'Device information, supports upsert by ID';
-COMMENT ON TABLE ENERGY_DATA IS 'Energy measurement data, bulk insert only';
+-- 表注释
+COMMENT ON TABLE RECEIVED_EFILES IS '跟踪所有已接收和处理的 E 文件';
+COMMENT ON COLUMN RECEIVED_EFILES.Id IS '主键标识';
+COMMENT ON COLUMN RECEIVED_EFILES.CommonAddr IS '公共地址';
+COMMENT ON COLUMN RECEIVED_EFILES.TypeId IS '类型标识';
+COMMENT ON COLUMN RECEIVED_EFILES.FileName IS '文件名';
+COMMENT ON COLUMN RECEIVED_EFILES.ReceivedAt IS '接收时间';
+COMMENT ON COLUMN RECEIVED_EFILES.FileSize IS '文件大小（字节）';
+COMMENT ON COLUMN RECEIVED_EFILES.Status IS '处理状态（SUCCESS/ERROR）';
+COMMENT ON COLUMN RECEIVED_EFILES.ErrorMessage IS '错误消息';
+
+COMMENT ON TABLE STATION_INFO IS '站点信息表，支持按 ID 进行 UPSERT';
+COMMENT ON COLUMN STATION_INFO.ID IS '站点唯一标识';
+COMMENT ON COLUMN STATION_INFO.Name IS '站点名称';
+COMMENT ON COLUMN STATION_INFO.Location IS '站点位置';
+COMMENT ON COLUMN STATION_INFO.Latitude IS '纬度';
+COMMENT ON COLUMN STATION_INFO.Longitude IS '经度';
+COMMENT ON COLUMN STATION_INFO.Capacity IS '容量';
+COMMENT ON COLUMN STATION_INFO.Status IS '状态';
+COMMENT ON COLUMN STATION_INFO.UpdatedAt IS '更新时间';
+
+COMMENT ON TABLE DEVICE_INFO IS '设备信息表，支持按 ID 进行 UPSERT';
+COMMENT ON COLUMN DEVICE_INFO.ID IS '设备唯一标识';
+COMMENT ON COLUMN DEVICE_INFO.StationId IS '所属站点 ID';
+COMMENT ON COLUMN DEVICE_INFO.DeviceType IS '设备类型';
+COMMENT ON COLUMN DEVICE_INFO.Model IS '设备型号';
+COMMENT ON COLUMN DEVICE_INFO.Manufacturer IS '制造商';
+COMMENT ON COLUMN DEVICE_INFO.InstallDate IS '安装日期';
+COMMENT ON COLUMN DEVICE_INFO.Status IS '设备状态';
+COMMENT ON COLUMN DEVICE_INFO.UpdatedAt IS '更新时间';
+
+COMMENT ON TABLE ENERGY_DATA IS '能量测量数据表，仅支持批量插入';
+COMMENT ON COLUMN ENERGY_DATA.ID IS '主键标识';
+COMMENT ON COLUMN ENERGY_DATA.StationId IS '站点 ID';
+COMMENT ON COLUMN ENERGY_DATA.Timestamp IS '测量时间戳';
+COMMENT ON COLUMN ENERGY_DATA.ActivePower IS '有功功率';
+COMMENT ON COLUMN ENERGY_DATA.ReactivePower IS '无功功率';
+COMMENT ON COLUMN ENERGY_DATA.Voltage IS '电压';
+COMMENT ON COLUMN ENERGY_DATA.Current IS '电流';
+COMMENT ON COLUMN ENERGY_DATA.Frequency IS '频率';
+COMMENT ON COLUMN ENERGY_DATA.CreatedAt IS '记录创建时间';

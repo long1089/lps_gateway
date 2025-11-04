@@ -1,7 +1,17 @@
 namespace LpsGateway.Lib60870;
 
+/// <summary>
+/// IEC-102 类型标识映射类
+/// </summary>
+/// <remarks>
+/// 提供 Type ID（类型标识）与类型名称的映射关系
+/// IEC-102 扩展类型标识范围：0x90 - 0xA8，用于 E 文件传输
+/// </remarks>
 public static class Mapping
 {
+    /// <summary>
+    /// 类型标识到类型名称的映射字典
+    /// </summary>
     public static readonly Dictionary<byte, string> TypeIdMapping = new()
     {
         { 0x90, "TYPE_90" },
@@ -31,6 +41,11 @@ public static class Mapping
         { 0xA8, "TYPE_A8" }
     };
 
+    /// <summary>
+    /// 根据类型标识获取类型名称
+    /// </summary>
+    /// <param name="typeId">类型标识字节</param>
+    /// <returns>类型名称字符串</returns>
     public static string GetTypeName(byte typeId)
     {
         return TypeIdMapping.TryGetValue(typeId, out var name) ? name : $"TYPE_{typeId:X2}";
