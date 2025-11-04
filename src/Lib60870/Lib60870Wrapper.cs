@@ -68,6 +68,7 @@ public static class Lib60870Wrapper
         try
         {
             // 示例：使用反射检查 lib60870.NET 是否可用
+            // 注意：使用 Assembly.Load 可能抛出 FileNotFoundException
             var lib60870Assembly = System.Reflection.Assembly.Load("lib60870.NET");
             if (lib60870Assembly != null)
             {
@@ -84,9 +85,13 @@ public static class Lib60870Wrapper
                 return null;
             }
         }
+        catch (FileNotFoundException)
+        {
+            logger.LogDebug("lib60870.NET 程序集未找到");
+        }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "lib60870.NET 程序集未找到");
+            logger.LogWarning(ex, "加载 lib60870.NET 时发生错误");
         }
 
         return null;

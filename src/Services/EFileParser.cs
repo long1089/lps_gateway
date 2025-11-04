@@ -10,6 +10,11 @@ namespace LpsGateway.Services;
 /// </summary>
 public class EFileParser : IEFileParser
 {
+    /// <summary>
+    /// NULL 值标识符（E 文件中使用 "-99" 表示 NULL）
+    /// </summary>
+    public const string NULL_VALUE_MARKER = "-99";
+
     private readonly IEFileRepository _repository;
     private readonly ILogger<EFileParser> _logger;
     private readonly Dictionary<string, Dictionary<string, string>> _columnMappings;
@@ -176,7 +181,7 @@ public class EFileParser : IEFileParser
                 for (int i = 0; i < Math.Min(headers.Count, values.Length); i++)
                 {
                     var value = values[i].Trim();
-                    record[headers[i]] = value == "-99" ? null : (object?)value;
+                    record[headers[i]] = value == NULL_VALUE_MARKER ? null : (object?)value;
                 }
 
                 result[currentTable].Add(record);

@@ -321,10 +321,22 @@ public class TcpLinkLayer : ILinkLayer
                     if (isFirstSend && frame.IsValid && frame.ControlField != null && frame.ControlField.PRM)
                     {
                         var targetEndpoint = endpoint ?? _fcbStates.Keys.FirstOrDefault();
-                        if (targetEndpoint != null && _fcbStates.TryGetValue(targetEndpoint, out var currentFcb))
+                        if (targetEndpoint != null)
                         {
+                            // 确保端点存在于 FCB 状态字典中
+                            if (!_fcbStates.ContainsKey(targetEndpoint))
+                            {
+                                _fcbStates[targetEndpoint] = false;
+                                _logger.LogDebug("初始化 FCB 状态: {Endpoint} -> False", targetEndpoint);
+                            }
+                            
+                            var currentFcb = _fcbStates[targetEndpoint];
                             _fcbStates[targetEndpoint] = !currentFcb;
                             _logger.LogDebug("切换 FCB 状态: {Endpoint} -> {FCB}", targetEndpoint, !currentFcb);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("无法切换 FCB：未找到目标端点");
                         }
                     }
                     
@@ -362,14 +374,19 @@ public class TcpLinkLayer : ILinkLayer
     /// </summary>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>是否收到响应</returns>
+    /// <remarks>
+    /// 注意：这是一个简化实现，用于演示超时机制。
+    /// 生产环境中应该维护一个等待响应的队列，根据实际收到的响应帧来判断。
+    /// 当前实现总是超时，以便演示重传逻辑。
+    /// </remarks>
     private async Task<bool> WaitForResponseAsync(CancellationToken cancellationToken)
     {
         try
         {
-            // 简化实现：等待一段时间看是否有数据接收事件触发
-            // 实际应用中应该维护一个等待响应的队列
-            await Task.Delay(_timeoutMs / 10, cancellationToken);
-            return true; // 简化：假设收到响应
+            // 实际应该等待数据接收事件或响应队列
+            // 当前实现会超时，触发重传机制演示
+            await Task.Delay(_timeoutMs, cancellationToken);
+            return false; // 超时，未收到响应
         }
         catch (OperationCanceledException)
         {
