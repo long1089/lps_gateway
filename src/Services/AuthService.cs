@@ -27,6 +27,9 @@ public class AuthService : IAuthService
     {
         try
         {
+            // 清理用户名以防止日志伪造
+            var sanitizedUsername = LogHelper.SanitizeForLog(username, 50);
+            
             // 查找用户
             var user = await _db.Queryable<User>()
                 .Where(u => u.Username == username)
@@ -34,32 +37,33 @@ public class AuthService : IAuthService
 
             if (user == null)
             {
-                _logger.LogWarning("用户不存在: {Username}", username);
+                _logger.LogWarning("用户不存在: {Username}", sanitizedUsername);
                 return (false, null, null);
             }
 
             if (!user.Enabled)
             {
-                _logger.LogWarning("用户已禁用: {Username}", username);
+                _logger.LogWarning("用户已禁用: {Username}", sanitizedUsername);
                 return (false, null, null);
             }
 
             // 验证密码
             if (!VerifyPassword(password, user.PasswordHash))
             {
-                _logger.LogWarning("密码错误: {Username}", username);
+                _logger.LogWarning("密码错误: {Username}", sanitizedUsername);
                 return (false, null, null);
             }
 
             // 生成令牌
             var token = GenerateToken(user);
-            _logger.LogInformation("用户登录成功: {Username}", username);
+            _logger.LogInformation("用户登录成功: {Username}", sanitizedUsername);
             
             return (true, token, user);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "登录失败: {Username}", username);
+            var sanitizedUsername = LogHelper.SanitizeForLog(username, 50);
+            _logger.LogError(ex, "登录失败: {Username}", sanitizedUsername);
             return (false, null, null);
         }
     }
