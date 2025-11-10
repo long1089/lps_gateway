@@ -1,3 +1,6 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using SqlSugar;
 using LpsGateway.Data;
 using LpsGateway.Services;
@@ -14,7 +17,62 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() { Title = "LPS Gateway API", Version = "v1" });
+    
+    // 添加JWT认证支持
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+        Name = "Authorization",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+    
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// 配置 JWT 认证
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? "LpsGateway-Default-Secret-Key-Change-In-Production-Min32Chars!";
+var issuer = jwtSettings["Issuer"] ?? "LpsGateway";
+var audience = jwtSettings["Audience"] ?? "LpsGatewayClients";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = issuer,
+        ValidAudience = audience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey))
+    };
+});
+
+builder.Services.AddAuthorization();
 
 // 配置 lib60870 选项
 var lib60870Options = builder.Configuration.GetSection("Lib60870").Get<Lib60870Options>() ?? new Lib60870Options();
@@ -31,8 +89,6 @@ if (string.IsNullOrEmpty(connectionString))
 builder.Services.AddScoped<ISqlSugarClient>(provider =>
 {
     var logger = provider.GetRequiredService<ILogger<Program>>();
-    // 注意：此处的 maskedConnectionString 已经将密码替换为 ***，仅用于日志记录
-    // 实际的数据库连接使用原始的 connectionString（包含密码）
     var maskedConnectionString = System.Text.RegularExpressions.Regex.Replace(connectionString, @"Password=[^;]*", "Password=***");
     logger.LogInformation("配置 SqlSugar 连接: {ConnectionString}", maskedConnectionString);
     
@@ -46,7 +102,15 @@ builder.Services.AddScoped<ISqlSugarClient>(provider =>
     return db;
 });
 
-// Register application services
+// Register M1 repositories
+builder.Services.AddScoped<IReportTypeRepository, ReportTypeRepository>();
+builder.Services.AddScoped<ISftpConfigRepository, SftpConfigRepository>();
+builder.Services.AddScoped<IScheduleRepository, ScheduleRepository>();
+
+// Register M1 services
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+// Register existing application services
 builder.Services.AddScoped<IEFileRepository, EFileRepository>();
 builder.Services.AddScoped<IEFileParser, EFileParser>();
 builder.Services.AddScoped<IFileTransferManager, FileTransferManager>();
@@ -83,6 +147,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
