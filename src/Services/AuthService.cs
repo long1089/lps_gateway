@@ -1,8 +1,4 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using LpsGateway.Data.Models;
-using Microsoft.IdentityModel.Tokens;
 using SqlSugar;
 
 namespace LpsGateway.Services;
@@ -13,13 +9,11 @@ namespace LpsGateway.Services;
 public class AuthService : IAuthService
 {
     private readonly ISqlSugarClient _db;
-    private readonly IConfiguration _configuration;
     private readonly ILogger<AuthService> _logger;
 
-    public AuthService(ISqlSugarClient db, IConfiguration configuration, ILogger<AuthService> logger)
+    public AuthService(ISqlSugarClient db, ILogger<AuthService> logger)
     {
         _db = db;
-        _configuration = configuration;
         _logger = logger;
     }
 
@@ -54,11 +48,10 @@ public class AuthService : IAuthService
                 return (false, null, null);
             }
 
-            // 生成令牌
-            var token = GenerateToken(user);
             _logger.LogInformation("用户登录成功: {Username}", sanitizedUsername);
             
-            return (true, token, user);
+            // MVC模式不需要返回token，返回null即可
+            return (true, null, user);
         }
         catch (Exception ex)
         {
@@ -66,36 +59,6 @@ public class AuthService : IAuthService
             _logger.LogError(ex, "登录失败: {Username}", sanitizedUsername);
             return (false, null, null);
         }
-    }
-
-    public string GenerateToken(User user)
-    {
-        var jwtSettings = _configuration.GetSection("JwtSettings");
-        var secretKey = jwtSettings["SecretKey"] ?? "LpsGateway-Default-Secret-Key-Change-In-Production-Min32Chars!";
-        var issuer = jwtSettings["Issuer"] ?? "LpsGateway";
-        var audience = jwtSettings["Audience"] ?? "LpsGatewayClients";
-        var expirationMinutes = int.Parse(jwtSettings["ExpirationMinutes"] ?? "480");
-
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new Claim(ClaimTypes.Role, user.Role),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
-            signingCredentials: credentials
-        );
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     public bool VerifyPassword(string password, string passwordHash)

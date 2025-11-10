@@ -47,26 +47,3 @@ public class ScheduleDto
     public string Timezone { get; set; } = "UTC";
     public bool Enabled { get; set; } = true;
 }
-
-/// <summary>
-/// 通用API响应
-/// </summary>
-public class ApiResponse<T>
-{
-    public bool Success { get; set; }
-    public string? Message { get; set; }
-    public T? Data { get; set; }
-    public List<string>? Errors { get; set; }
-}
-
-/// <summary>
-/// 分页响应
-/// </summary>
-public class PagedResponse<T>
-{
-    public List<T> Items { get; set; } = new();
-    public int TotalCount { get; set; }
-    public int PageIndex { get; set; }
-    public int PageSize { get; set; }
-    public int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
-}

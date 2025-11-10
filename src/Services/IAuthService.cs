@@ -13,11 +13,6 @@ public interface IAuthService
     Task<(bool Success, string? Token, User? User)> LoginAsync(string username, string password);
     
     /// <summary>
-    /// 生成JWT令牌
-    /// </summary>
-    string GenerateToken(User user);
-    
-    /// <summary>
     /// 验证密码
     /// </summary>
     bool VerifyPassword(string password, string passwordHash);
