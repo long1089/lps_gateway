@@ -7,12 +7,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace LpsGateway.Controllers;
 
 /// <summary>
-/// SFTP配置控制器
+/// SFTP配置控制器 - MVC模式
 /// </summary>
-[ApiController]
-[Route("api/[controller]")]
 [Authorize]
-public class SftpConfigsController : ControllerBase
+public class SftpConfigsController : Controller
 {
     private readonly ISftpConfigRepository _repository;
     private readonly ILogger<SftpConfigsController> _logger;
@@ -24,85 +22,36 @@ public class SftpConfigsController : ControllerBase
     }
 
     /// <summary>
-    /// 获取所有SFTP配置
+    /// 列表页面
     /// </summary>
-    [HttpGet]
-    public async Task<ActionResult<ApiResponse<List<SftpConfig>>>> GetAll([FromQuery] bool? enabled = null)
+    public async Task<IActionResult> Index()
     {
-        try
-        {
-            var items = await _repository.GetAllAsync(enabled);
-            
-            // 隐藏敏感信息
-            foreach (var item in items)
-            {
-                item.PasswordEncrypted = null;
-                item.KeyPassphraseEncrypted = null;
-            }
-            
-            return Ok(new ApiResponse<List<SftpConfig>>
-            {
-                Success = true,
-                Data = items
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取SFTP配置列表失败");
-            return StatusCode(500, new ApiResponse<List<SftpConfig>>
-            {
-                Success = false,
-                Message = "获取SFTP配置列表失败"
-            });
-        }
+        var items = await _repository.GetAllAsync();
+        return View(items);
     }
 
     /// <summary>
-    /// 根据ID获取SFTP配置
+    /// 创建页面
     /// </summary>
-    [HttpGet("{id}")]
-    public async Task<ActionResult<ApiResponse<SftpConfig>>> GetById(int id)
+    [Authorize(Roles = "Admin")]
+    public IActionResult Create()
     {
-        try
-        {
-            var item = await _repository.GetByIdAsync(id);
-            if (item == null)
-            {
-                return NotFound(new ApiResponse<SftpConfig>
-                {
-                    Success = false,
-                    Message = "SFTP配置不存在"
-                });
-            }
-
-            // 隐藏敏感信息
-            item.PasswordEncrypted = null;
-            item.KeyPassphraseEncrypted = null;
-
-            return Ok(new ApiResponse<SftpConfig>
-            {
-                Success = true,
-                Data = item
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取SFTP配置失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<SftpConfig>
-            {
-                Success = false,
-                Message = "获取SFTP配置失败"
-            });
-        }
+        return View();
     }
 
     /// <summary>
-    /// 创建SFTP配置
+    /// 创建提交
     /// </summary>
     [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<SftpConfig>>> Create([FromBody] SftpConfigDto dto)
+    public async Task<IActionResult> Create(SftpConfigDto dto)
     {
+        if (!ModelState.IsValid)
+        {
+            return View(dto);
+        }
+
         try
         {
             var config = new SftpConfig
@@ -118,7 +67,7 @@ public class SftpConfigsController : ControllerBase
                 Enabled = dto.Enabled
             };
 
-            // 简单加密（生产环境应使用更强的加密方式）
+            // 简单加密
             if (!string.IsNullOrEmpty(dto.Password))
             {
                 config.PasswordEncrypted = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(dto.Password));
@@ -134,46 +83,72 @@ public class SftpConfigsController : ControllerBase
                 config.KeyPassphraseEncrypted = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(dto.KeyPassphrase));
             }
 
-            var created = await _repository.CreateAsync(config);
-            
-            // 隐藏敏感信息
-            created.PasswordEncrypted = null;
-            created.KeyPassphraseEncrypted = null;
-
-            return CreatedAtAction(nameof(GetById), new { id = created.Id }, new ApiResponse<SftpConfig>
-            {
-                Success = true,
-                Data = created
-            });
+            await _repository.CreateAsync(config);
+            TempData["SuccessMessage"] = "SFTP配置创建成功";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "创建SFTP配置失败");
-            return StatusCode(500, new ApiResponse<SftpConfig>
-            {
-                Success = false,
-                Message = "创建SFTP配置失败"
-            });
+            ModelState.AddModelError(string.Empty, "创建失败，请重试");
+            return View(dto);
         }
     }
 
     /// <summary>
-    /// 更新SFTP配置
+    /// 编辑页面
     /// </summary>
-    [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<SftpConfig>>> Update(int id, [FromBody] SftpConfigDto dto)
+    public async Task<IActionResult> Edit(int id)
     {
+        var config = await _repository.GetByIdAsync(id);
+        if (config == null)
+        {
+            return NotFound();
+        }
+
+        var dto = new SftpConfigDto
+        {
+            Id = config.Id,
+            Name = config.Name,
+            Host = config.Host,
+            Port = config.Port,
+            Username = config.Username,
+            AuthType = config.AuthType,
+            BasePathTemplate = config.BasePathTemplate,
+            ConcurrencyLimit = config.ConcurrencyLimit,
+            TimeoutSec = config.TimeoutSec,
+            Enabled = config.Enabled,
+            KeyPath = config.KeyPath
+        };
+
+        return View(dto);
+    }
+
+    /// <summary>
+    /// 编辑提交
+    /// </summary>
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Edit(int id, SftpConfigDto dto)
+    {
+        if (id != dto.Id)
+        {
+            return NotFound();
+        }
+
+        if (!ModelState.IsValid)
+        {
+            return View(dto);
+        }
+
         try
         {
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
             {
-                return NotFound(new ApiResponse<SftpConfig>
-                {
-                    Success = false,
-                    Message = "SFTP配置不存在"
-                });
+                return NotFound();
             }
 
             existing.Name = dto.Name;
@@ -203,63 +178,42 @@ public class SftpConfigsController : ControllerBase
             }
 
             await _repository.UpdateAsync(existing);
-            
-            // 隐藏敏感信息
-            existing.PasswordEncrypted = null;
-            existing.KeyPassphraseEncrypted = null;
-
-            return Ok(new ApiResponse<SftpConfig>
-            {
-                Success = true,
-                Data = existing
-            });
+            TempData["SuccessMessage"] = "SFTP配置更新成功";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "更新SFTP配置失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<SftpConfig>
-            {
-                Success = false,
-                Message = "更新SFTP配置失败"
-            });
+            ModelState.AddModelError(string.Empty, "更新失败，请重试");
+            return View(dto);
         }
     }
 
     /// <summary>
-    /// 删除SFTP配置
+    /// 删除
     /// </summary>
-    [HttpDelete("{id}")]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
+    public async Task<IActionResult> Delete(int id)
     {
         try
         {
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
             {
-                return NotFound(new ApiResponse<object>
-                {
-                    Success = false,
-                    Message = "SFTP配置不存在"
-                });
+                return NotFound();
             }
 
             await _repository.DeleteAsync(id);
-
-            return Ok(new ApiResponse<object>
-            {
-                Success = true,
-                Message = "删除成功"
-            });
+            TempData["SuccessMessage"] = "SFTP配置删除成功";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "删除SFTP配置失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<object>
-            {
-                Success = false,
-                Message = "删除SFTP配置失败"
-            });
+            TempData["ErrorMessage"] = "删除失败，请重试";
         }
+
+        return RedirectToAction(nameof(Index));
     }
 }

@@ -3,17 +3,14 @@ using LpsGateway.Data.Models;
 using LpsGateway.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
 
 namespace LpsGateway.Controllers;
 
 /// <summary>
-/// 报表类型配置控制器
+/// 报表类型配置控制器 - MVC模式
 /// </summary>
-[ApiController]
-[Route("api/[controller]")]
 [Authorize]
-public class ReportTypesController : ControllerBase
+public class ReportTypesController : Controller
 {
     private readonly IReportTypeRepository _repository;
     private readonly ILogger<ReportTypesController> _logger;
@@ -25,83 +22,43 @@ public class ReportTypesController : ControllerBase
     }
 
     /// <summary>
-    /// 获取所有报表类型
+    /// 列表页面
     /// </summary>
-    [HttpGet]
-    public async Task<ActionResult<ApiResponse<List<ReportType>>>> GetAll([FromQuery] bool? enabled = null)
+    public async Task<IActionResult> Index()
     {
-        try
-        {
-            var items = await _repository.GetAllAsync(enabled);
-            return Ok(new ApiResponse<List<ReportType>>
-            {
-                Success = true,
-                Data = items
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取报表类型列表失败");
-            return StatusCode(500, new ApiResponse<List<ReportType>>
-            {
-                Success = false,
-                Message = "获取报表类型列表失败"
-            });
-        }
+        var items = await _repository.GetAllAsync();
+        return View(items);
     }
 
     /// <summary>
-    /// 根据ID获取报表类型
+    /// 创建页面
     /// </summary>
-    [HttpGet("{id}")]
-    public async Task<ActionResult<ApiResponse<ReportType>>> GetById(int id)
+    [Authorize(Roles = "Admin")]
+    public IActionResult Create()
     {
-        try
-        {
-            var item = await _repository.GetByIdAsync(id);
-            if (item == null)
-            {
-                return NotFound(new ApiResponse<ReportType>
-                {
-                    Success = false,
-                    Message = "报表类型不存在"
-                });
-            }
-
-            return Ok(new ApiResponse<ReportType>
-            {
-                Success = true,
-                Data = item
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取报表类型失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<ReportType>
-            {
-                Success = false,
-                Message = "获取报表类型失败"
-            });
-        }
+        return View();
     }
 
     /// <summary>
-    /// 创建报表类型
+    /// 创建提交
     /// </summary>
     [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<ReportType>>> Create([FromBody] ReportTypeDto dto)
+    public async Task<IActionResult> Create(ReportTypeDto dto)
     {
+        if (!ModelState.IsValid)
+        {
+            return View(dto);
+        }
+
         try
         {
             // 验证编码是否已存在
             if (await _repository.ExistsAsync(dto.Code))
             {
-                return BadRequest(new ApiResponse<ReportType>
-                {
-                    Success = false,
-                    Message = $"报表类型编码 '{dto.Code}' 已存在"
-                });
+                ModelState.AddModelError("Code", $"报表类型编码 '{dto.Code}' 已存在");
+                return View(dto);
             }
 
             var reportType = new ReportType
@@ -113,52 +70,74 @@ public class ReportTypesController : ControllerBase
                 Enabled = dto.Enabled
             };
 
-            var created = await _repository.CreateAsync(reportType);
-
-            return CreatedAtAction(nameof(GetById), new { id = created.Id }, new ApiResponse<ReportType>
-            {
-                Success = true,
-                Data = created
-            });
+            await _repository.CreateAsync(reportType);
+            TempData["SuccessMessage"] = "报表类型创建成功";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "创建报表类型失败");
-            return StatusCode(500, new ApiResponse<ReportType>
-            {
-                Success = false,
-                Message = "创建报表类型失败"
-            });
+            ModelState.AddModelError(string.Empty, "创建失败，请重试");
+            return View(dto);
         }
     }
 
     /// <summary>
-    /// 更新报表类型
+    /// 编辑页面
     /// </summary>
-    [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<ReportType>>> Update(int id, [FromBody] ReportTypeDto dto)
+    public async Task<IActionResult> Edit(int id)
     {
+        var reportType = await _repository.GetByIdAsync(id);
+        if (reportType == null)
+        {
+            return NotFound();
+        }
+
+        var dto = new ReportTypeDto
+        {
+            Id = reportType.Id,
+            Code = reportType.Code,
+            Name = reportType.Name,
+            Description = reportType.Description,
+            DefaultSftpConfigId = reportType.DefaultSftpConfigId,
+            Enabled = reportType.Enabled
+        };
+
+        return View(dto);
+    }
+
+    /// <summary>
+    /// 编辑提交
+    /// </summary>
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Edit(int id, ReportTypeDto dto)
+    {
+        if (id != dto.Id)
+        {
+            return NotFound();
+        }
+
+        if (!ModelState.IsValid)
+        {
+            return View(dto);
+        }
+
         try
         {
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
             {
-                return NotFound(new ApiResponse<ReportType>
-                {
-                    Success = false,
-                    Message = "报表类型不存在"
-                });
+                return NotFound();
             }
 
             // 验证编码是否已被其他记录使用
             if (await _repository.ExistsAsync(dto.Code, id))
             {
-                return BadRequest(new ApiResponse<ReportType>
-                {
-                    Success = false,
-                    Message = $"报表类型编码 '{dto.Code}' 已被其他记录使用"
-                });
+                ModelState.AddModelError("Code", $"报表类型编码 '{dto.Code}' 已被其他记录使用");
+                return View(dto);
             }
 
             existing.Code = dto.Code;
@@ -168,59 +147,42 @@ public class ReportTypesController : ControllerBase
             existing.Enabled = dto.Enabled;
 
             await _repository.UpdateAsync(existing);
-
-            return Ok(new ApiResponse<ReportType>
-            {
-                Success = true,
-                Data = existing
-            });
+            TempData["SuccessMessage"] = "报表类型更新成功";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "更新报表类型失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<ReportType>
-            {
-                Success = false,
-                Message = "更新报表类型失败"
-            });
+            ModelState.AddModelError(string.Empty, "更新失败，请重试");
+            return View(dto);
         }
     }
 
     /// <summary>
-    /// 删除报表类型
+    /// 删除
     /// </summary>
-    [HttpDelete("{id}")]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
+    public async Task<IActionResult> Delete(int id)
     {
         try
         {
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
             {
-                return NotFound(new ApiResponse<object>
-                {
-                    Success = false,
-                    Message = "报表类型不存在"
-                });
+                return NotFound();
             }
 
             await _repository.DeleteAsync(id);
-
-            return Ok(new ApiResponse<object>
-            {
-                Success = true,
-                Message = "删除成功"
-            });
+            TempData["SuccessMessage"] = "报表类型删除成功";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "删除报表类型失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<object>
-            {
-                Success = false,
-                Message = "删除报表类型失败"
-            });
+            TempData["ErrorMessage"] = "删除失败，请重试";
         }
+
+        return RedirectToAction(nameof(Index));
     }
 }

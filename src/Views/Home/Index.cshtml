@@ -1,0 +1,62 @@
+@{
+    ViewData["Title"] = "首页";
+}
+
+<div class="text-center mt-5">
+    <h1 class="display-4">欢迎使用 LPS Gateway</h1>
+    <p class="lead">IEC-102 扩展 E 文件接收与管理系统</p>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-file-earmark-text"></i> 报表类型管理
+                </h5>
+                <p class="card-text">配置和管理不同类型的报表定义</p>
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <a asp-controller="ReportTypes" asp-action="Index" class="btn btn-primary">进入管理</a>
+                }
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-server"></i> SFTP 配置
+                </h5>
+                <p class="card-text">管理 SFTP 服务器连接配置</p>
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <a asp-controller="SftpConfigs" asp-action="Index" class="btn btn-primary">进入管理</a>
+                }
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-clock"></i> 调度配置
+                </h5>
+                <p class="card-text">设置自动下载的调度时间</p>
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <a asp-controller="Schedules" asp-action="Index" class="btn btn-primary">进入管理</a>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (User.Identity?.IsAuthenticated != true)
+{
+    <div class="text-center mt-5">
+        <a asp-controller="Account" asp-action="Login" class="btn btn-lg btn-primary">立即登录</a>
+    </div>
+}

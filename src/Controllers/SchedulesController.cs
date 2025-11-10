@@ -8,116 +8,58 @@ using System.Text.Json;
 namespace LpsGateway.Controllers;
 
 /// <summary>
-/// 调度配置控制器
+/// 调度配置控制器 - MVC模式
 /// </summary>
-[ApiController]
-[Route("api/[controller]")]
 [Authorize]
-public class SchedulesController : ControllerBase
+public class SchedulesController : Controller
 {
     private readonly IScheduleRepository _repository;
+    private readonly IReportTypeRepository _reportTypeRepository;
     private readonly ILogger<SchedulesController> _logger;
 
-    public SchedulesController(IScheduleRepository repository, ILogger<SchedulesController> logger)
+    public SchedulesController(
+        IScheduleRepository repository,
+        IReportTypeRepository reportTypeRepository,
+        ILogger<SchedulesController> logger)
     {
         _repository = repository;
+        _reportTypeRepository = reportTypeRepository;
         _logger = logger;
     }
 
     /// <summary>
-    /// 获取所有调度配置
+    /// 列表页面
     /// </summary>
-    [HttpGet]
-    public async Task<ActionResult<ApiResponse<List<Schedule>>>> GetAll([FromQuery] bool? enabled = null)
+    public async Task<IActionResult> Index()
     {
-        try
-        {
-            var items = await _repository.GetAllAsync(enabled);
-            return Ok(new ApiResponse<List<Schedule>>
-            {
-                Success = true,
-                Data = items
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取调度配置列表失败");
-            return StatusCode(500, new ApiResponse<List<Schedule>>
-            {
-                Success = false,
-                Message = "获取调度配置列表失败"
-            });
-        }
+        var items = await _repository.GetAllAsync();
+        return View(items);
     }
 
     /// <summary>
-    /// 根据报表类型获取调度配置
+    /// 创建页面
     /// </summary>
-    [HttpGet("reporttype/{reportTypeId}")]
-    public async Task<ActionResult<ApiResponse<List<Schedule>>>> GetByReportType(int reportTypeId)
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Create()
     {
-        try
-        {
-            var items = await _repository.GetByReportTypeAsync(reportTypeId);
-            return Ok(new ApiResponse<List<Schedule>>
-            {
-                Success = true,
-                Data = items
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取报表类型调度配置失败: {ReportTypeId}", reportTypeId);
-            return StatusCode(500, new ApiResponse<List<Schedule>>
-            {
-                Success = false,
-                Message = "获取调度配置失败"
-            });
-        }
+        ViewBag.ReportTypes = await _reportTypeRepository.GetAllAsync(true);
+        return View();
     }
 
     /// <summary>
-    /// 根据ID获取调度配置
-    /// </summary>
-    [HttpGet("{id}")]
-    public async Task<ActionResult<ApiResponse<Schedule>>> GetById(int id)
-    {
-        try
-        {
-            var item = await _repository.GetByIdAsync(id);
-            if (item == null)
-            {
-                return NotFound(new ApiResponse<Schedule>
-                {
-                    Success = false,
-                    Message = "调度配置不存在"
-                });
-            }
-
-            return Ok(new ApiResponse<Schedule>
-            {
-                Success = true,
-                Data = item
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取调度配置失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<Schedule>
-            {
-                Success = false,
-                Message = "获取调度配置失败"
-            });
-        }
-    }
-
-    /// <summary>
-    /// 创建调度配置
+    /// 创建提交
     /// </summary>
     [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<Schedule>>> Create([FromBody] ScheduleDto dto)
+    public async Task<IActionResult> Create(ScheduleDto dto)
     {
+        if (!ModelState.IsValid)
+        {
+            ViewBag.ReportTypes = await _reportTypeRepository.GetAllAsync(true);
+            return View(dto);
+        }
+
         try
         {
             var schedule = new Schedule
@@ -144,42 +86,81 @@ public class SchedulesController : ControllerBase
                 schedule.CronExpression = dto.CronExpression;
             }
 
-            var created = await _repository.CreateAsync(schedule);
-
-            return CreatedAtAction(nameof(GetById), new { id = created.Id }, new ApiResponse<Schedule>
-            {
-                Success = true,
-                Data = created
-            });
+            await _repository.CreateAsync(schedule);
+            TempData["SuccessMessage"] = "调度配置创建成功";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "创建调度配置失败");
-            return StatusCode(500, new ApiResponse<Schedule>
-            {
-                Success = false,
-                Message = "创建调度配置失败"
-            });
+            ModelState.AddModelError(string.Empty, "创建失败，请重试");
+            ViewBag.ReportTypes = await _reportTypeRepository.GetAllAsync(true);
+            return View(dto);
         }
     }
 
     /// <summary>
-    /// 更新调度配置
+    /// 编辑页面
     /// </summary>
-    [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<Schedule>>> Update(int id, [FromBody] ScheduleDto dto)
+    public async Task<IActionResult> Edit(int id)
     {
+        var schedule = await _repository.GetByIdAsync(id);
+        if (schedule == null)
+        {
+            return NotFound();
+        }
+
+        var dto = new ScheduleDto
+        {
+            Id = schedule.Id,
+            ReportTypeId = schedule.ReportTypeId,
+            ScheduleType = schedule.ScheduleType,
+            Timezone = schedule.Timezone,
+            Enabled = schedule.Enabled,
+            CronExpression = schedule.CronExpression
+        };
+
+        // 反序列化JSON字段
+        if (!string.IsNullOrEmpty(schedule.Times))
+        {
+            dto.Times = JsonSerializer.Deserialize<List<string>>(schedule.Times);
+        }
+
+        if (!string.IsNullOrEmpty(schedule.MonthDays))
+        {
+            dto.MonthDays = JsonSerializer.Deserialize<List<int>>(schedule.MonthDays);
+        }
+
+        ViewBag.ReportTypes = await _reportTypeRepository.GetAllAsync(true);
+        return View(dto);
+    }
+
+    /// <summary>
+    /// 编辑提交
+    /// </summary>
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Edit(int id, ScheduleDto dto)
+    {
+        if (id != dto.Id)
+        {
+            return NotFound();
+        }
+
+        if (!ModelState.IsValid)
+        {
+            ViewBag.ReportTypes = await _reportTypeRepository.GetAllAsync(true);
+            return View(dto);
+        }
+
         try
         {
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
             {
-                return NotFound(new ApiResponse<Schedule>
-                {
-                    Success = false,
-                    Message = "调度配置不存在"
-                });
+                return NotFound();
             }
 
             existing.ReportTypeId = dto.ReportTypeId;
@@ -209,59 +190,43 @@ public class SchedulesController : ControllerBase
             existing.CronExpression = dto.CronExpression;
 
             await _repository.UpdateAsync(existing);
-
-            return Ok(new ApiResponse<Schedule>
-            {
-                Success = true,
-                Data = existing
-            });
+            TempData["SuccessMessage"] = "调度配置更新成功";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "更新调度配置失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<Schedule>
-            {
-                Success = false,
-                Message = "更新调度配置失败"
-            });
+            ModelState.AddModelError(string.Empty, "更新失败，请重试");
+            ViewBag.ReportTypes = await _reportTypeRepository.GetAllAsync(true);
+            return View(dto);
         }
     }
 
     /// <summary>
-    /// 删除调度配置
+    /// 删除
     /// </summary>
-    [HttpDelete("{id}")]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
+    public async Task<IActionResult> Delete(int id)
     {
         try
         {
             var existing = await _repository.GetByIdAsync(id);
             if (existing == null)
             {
-                return NotFound(new ApiResponse<object>
-                {
-                    Success = false,
-                    Message = "调度配置不存在"
-                });
+                return NotFound();
             }
 
             await _repository.DeleteAsync(id);
-
-            return Ok(new ApiResponse<object>
-            {
-                Success = true,
-                Message = "删除成功"
-            });
+            TempData["SuccessMessage"] = "调度配置删除成功";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "删除调度配置失败: {Id}", id);
-            return StatusCode(500, new ApiResponse<object>
-            {
-                Success = false,
-                Message = "删除调度配置失败"
-            });
+            TempData["ErrorMessage"] = "删除失败，请重试";
         }
+
+        return RedirectToAction(nameof(Index));
     }
 }
