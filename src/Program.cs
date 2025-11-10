@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
 using SqlSugar;
 using LpsGateway.Data;
 using LpsGateway.Services;
@@ -11,10 +12,23 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
-// Add services to the container.
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+// Add MVC services
+builder.Services.AddControllersWithViews();
+
+// 配置 Cookie 认证 (MVC模式)
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.LogoutPath = "/Account/Logout";
+        options.AccessDeniedPath = "/Account/AccessDenied";
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    });
+
+builder.Services.AddAuthorization();
 
 // 配置 lib60870 选项
 var lib60870Options = builder.Configuration.GetSection("Lib60870").Get<Lib60870Options>() ?? new Lib60870Options();
@@ -31,8 +45,6 @@ if (string.IsNullOrEmpty(connectionString))
 builder.Services.AddScoped<ISqlSugarClient>(provider =>
 {
     var logger = provider.GetRequiredService<ILogger<Program>>();
-    // 注意：此处的 maskedConnectionString 已经将密码替换为 ***，仅用于日志记录
-    // 实际的数据库连接使用原始的 connectionString（包含密码）
     var maskedConnectionString = System.Text.RegularExpressions.Regex.Replace(connectionString, @"Password=[^;]*", "Password=***");
     logger.LogInformation("配置 SqlSugar 连接: {ConnectionString}", maskedConnectionString);
     
@@ -46,7 +58,15 @@ builder.Services.AddScoped<ISqlSugarClient>(provider =>
     return db;
 });
 
-// Register application services
+// Register M1 repositories
+builder.Services.AddScoped<IReportTypeRepository, ReportTypeRepository>();
+builder.Services.AddScoped<ISftpConfigRepository, SftpConfigRepository>();
+builder.Services.AddScoped<IScheduleRepository, ScheduleRepository>();
+
+// Register M1 services
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+// Register existing application services
 builder.Services.AddScoped<IEFileRepository, EFileRepository>();
 builder.Services.AddScoped<IEFileParser, EFileParser>();
 builder.Services.AddScoped<IFileTransferManager, FileTransferManager>();
@@ -77,14 +97,26 @@ logger.LogInformation("LPS Gateway 正在启动...");
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    logger.LogInformation("开发环境：启用 Swagger UI");
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    logger.LogInformation("开发环境：启用开发者异常页");
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
 }
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
+
+// 配置 MVC 路由
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
 
 // Start TCP Link Layer
 var linkLayer = app.Services.GetRequiredService<ILinkLayer>();
