@@ -66,6 +66,14 @@ builder.Services.AddScoped<IScheduleRepository, ScheduleRepository>();
 // Register M1 services
 builder.Services.AddScoped<IAuthService, AuthService>();
 
+// Register M2 services
+builder.Services.AddScoped<ISftpManager, SftpManager>();
+builder.Services.AddSingleton<IScheduleManager, ScheduleManager>();
+builder.Services.AddScoped<LpsGateway.Services.Jobs.FileDownloadJob>();
+
+// Register M2 hosted service
+builder.Services.AddHostedService<LpsGateway.HostedServices.ScheduleManagerHostedService>();
+
 // Register existing application services
 builder.Services.AddScoped<IEFileRepository, EFileRepository>();
 builder.Services.AddScoped<IEFileParser, EFileParser>();

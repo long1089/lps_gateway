@@ -1,0 +1,87 @@
+using LpsGateway.Data;
+using LpsGateway.Data.Models;
+using Quartz;
+
+namespace LpsGateway.Services.Jobs;
+
+/// <summary>
+/// 文件下载调度任务
+/// </summary>
+public class FileDownloadJob : IJob
+{
+    private readonly ISftpManager _sftpManager;
+    private readonly IReportTypeRepository _reportTypeRepository;
+    private readonly ILogger<FileDownloadJob> _logger;
+
+    public FileDownloadJob(
+        ISftpManager sftpManager,
+        IReportTypeRepository reportTypeRepository,
+        ILogger<FileDownloadJob> logger)
+    {
+        _sftpManager = sftpManager;
+        _reportTypeRepository = reportTypeRepository;
+        _logger = logger;
+    }
+
+    public async Task Execute(IJobExecutionContext context)
+    {
+        var dataMap = context.MergedJobDataMap;
+        var reportTypeId = dataMap.GetInt("ReportTypeId");
+        var scheduleId = dataMap.GetInt("ScheduleId");
+
+        _logger.LogInformation("开始执行文件下载任务: ReportTypeId={ReportTypeId}, ScheduleId={ScheduleId}", 
+            reportTypeId, scheduleId);
+
+        try
+        {
+            var reportType = await _reportTypeRepository.GetByIdAsync(reportTypeId);
+            if (reportType == null)
+            {
+                _logger.LogError("报表类型不存在: {ReportTypeId}", reportTypeId);
+                return;
+            }
+
+            if (!reportType.Enabled || reportType.DefaultSftpConfigId == null)
+            {
+                _logger.LogWarning("报表类型已禁用或未配置SFTP: {ReportTypeId}", reportTypeId);
+                return;
+            }
+
+            var sftpConfigId = reportType.DefaultSftpConfigId.Value;
+            var now = DateTime.Now;
+            
+            // 解析路径模板
+            var remotePath = _sftpManager.ParsePathTemplate(reportType.Code, now);
+            
+            // 列出远程文件
+            var files = await _sftpManager.ListFilesAsync(sftpConfigId, remotePath, context.CancellationToken);
+            
+            _logger.LogInformation("发现 {Count} 个待下载文件", files.Count);
+
+            // 下载文件
+            foreach (var remoteFile in files)
+            {
+                var fileName = Path.GetFileName(remoteFile);
+                var localPath = Path.Combine("downloads", reportType.Code, fileName);
+                
+                var success = await _sftpManager.DownloadFileAsync(sftpConfigId, remoteFile, localPath, context.CancellationToken);
+                
+                if (success)
+                {
+                    _logger.LogInformation("文件下载成功: {RemoteFile}", remoteFile);
+                }
+                else
+                {
+                    _logger.LogError("文件下载失败: {RemoteFile}", remoteFile);
+                }
+            }
+
+            _logger.LogInformation("文件下载任务完成: ReportTypeId={ReportTypeId}", reportTypeId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "文件下载任务执行失败: ReportTypeId={ReportTypeId}", reportTypeId);
+            throw;
+        }
+    }
+}
