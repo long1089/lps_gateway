@@ -34,7 +34,7 @@ builder.Services.AddAuthorization();
 var lib60870Options = builder.Configuration.GetSection("Lib60870").Get<Lib60870Options>() ?? new Lib60870Options();
 builder.Services.AddSingleton(lib60870Options);
 
-// Configure SqlSugar
+// Configure SqlSugarCore
 var connectionString = lib60870Options.ConnectionString;
 if (string.IsNullOrEmpty(connectionString))
 {
@@ -46,7 +46,7 @@ builder.Services.AddScoped<ISqlSugarClient>(provider =>
 {
     var logger = provider.GetRequiredService<ILogger<Program>>();
     var maskedConnectionString = System.Text.RegularExpressions.Regex.Replace(connectionString, @"Password=[^;]*", "Password=***");
-    logger.LogInformation("配置 SqlSugar 连接: {ConnectionString}", maskedConnectionString);
+    logger.LogInformation("配置 SqlSugarCore 连接: {ConnectionString}", maskedConnectionString);
     
     var db = new SqlSugarClient(new ConnectionConfig
     {
