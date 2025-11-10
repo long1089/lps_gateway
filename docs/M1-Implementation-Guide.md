@@ -415,13 +415,15 @@ The project follows a layered architecture:
 ### Build Warnings
 - SqlSugar compatibility warning is expected (package targets .NET Framework but works with .NET 8)
 
-## Next Steps (M2)
+## Next Steps (M2) - ✅ COMPLETED
 
-- [ ] Implement SFTP Manager for file downloads
-- [ ] Integrate Quartz.NET for scheduling
-- [ ] Add distributed locking (PostgreSQL advisory locks or Redis)
-- [ ] Implement manual trigger API
-- [ ] Add file download workflow
+See [M2-Implementation-Guide.md](M2-Implementation-Guide.md) for details.
+
+- [x] Implement SFTP Manager for file downloads
+- [x] Integrate Quartz.NET for scheduling
+- [x] Implement manual trigger API
+- [x] Add file download workflow
+- [ ] Add distributed locking (PostgreSQL advisory locks or Redis) - Deferred to future milestone
 
 ## Support
 
