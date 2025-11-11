@@ -11,7 +11,7 @@ namespace LpsGateway.Lib60870;
 /// <remarks>
 /// 作为从站（从动端），监听来自主站的连接并响应请求
 /// </remarks>
-public class Iec102Slave : IDisposable
+public class Iec102Slave : IIec102Slave, IDisposable
 {
     private readonly int _port;
     private readonly ushort _stationAddress;
