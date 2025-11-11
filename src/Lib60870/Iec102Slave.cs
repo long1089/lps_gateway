@@ -387,9 +387,26 @@ public class Iec102Slave : IIec102Slave, IDisposable
                 _logger.LogInformation("从会话中取出1级文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
                     fileTask.FileRecordId, fileTask.FileName);
                 
-                // TODO: 实现文件传输逻辑
-                bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
-                await SendNoDataAsync(session, hasMoreData, cancellationToken);
+                // 发送文件分段
+                bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
+                
+                if (sendSuccess)
+                {
+                    // 文件段已全部排队，主循环会陆续发送
+                    // 检查是否还有更多数据
+                    bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
+                    
+                    // 如果队列中有数据，立即取出第一段发送
+                    if (session.TryDequeueClass1Data(out var firstFrame) && firstFrame != null)
+                    {
+                        await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                        return;
+                    }
+                }
+                
+                // 发送失败或无数据，返回NoData
+                bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
+                await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
                 return;
             }
         }
@@ -447,9 +464,22 @@ public class Iec102Slave : IIec102Slave, IDisposable
                                 // 立即处理这个任务
                                 if (session.TryDequeueFileTransferTask(out var task) && task != null)
                                 {
-                                    // TODO: 实现文件传输
-                                    bool hasMoreData = session.HasFileTransferTasks();
-                                    await SendNoDataAsync(session, hasMoreData, cancellationToken);
+                                    // 发送文件分段
+                                    bool sendSuccess = await SendFileSegmentsAsync(session, task, cancellationToken);
+                                    
+                                    if (sendSuccess)
+                                    {
+                                        // 文件段已全部排队，立即取出第一段发送
+                                        if (session.TryDequeueClass1Data(out var firstFrame) && firstFrame != null)
+                                        {
+                                            bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
+                                            await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                                            return;
+                                        }
+                                    }
+                                    
+                                    bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
+                                    await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
                                     return;
                                 }
                             }
@@ -480,13 +510,23 @@ public class Iec102Slave : IIec102Slave, IDisposable
             _logger.LogInformation("从会话中取出文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
                 fileTask.FileRecordId, fileTask.FileName);
             
-            // TODO: 在这里实现文件传输逻辑
-            // 读取文件内容，分段发送
-            // 这里暂时返回无数据，实际实现需要调用文件传输服务
+            // 发送文件分段
+            bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
             
-            // 检查是否还有文件任务或1级数据
-            bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
-            await SendNoDataAsync(session, hasMoreData, cancellationToken);
+            if (sendSuccess)
+            {
+                // 文件段已全部排队，立即取出第一段发送
+                if (session.TryDequeueClass2Data(out var firstFrame) && firstFrame != null)
+                {
+                    bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
+                    await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                    return;
+                }
+            }
+            
+            // 发送失败或无数据
+            bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
+            await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
             return;
         }
         
@@ -546,9 +586,22 @@ public class Iec102Slave : IIec102Slave, IDisposable
                                 // 立即处理这个任务
                                 if (session.TryDequeueFileTransferTask(out var task) && task != null)
                                 {
-                                    // TODO: 实现文件传输
-                                    bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
-                                    await SendNoDataAsync(session, hasMoreData, cancellationToken);
+                                    // 发送文件分段
+                                    bool sendSuccess = await SendFileSegmentsAsync(session, task, cancellationToken);
+                                    
+                                    if (sendSuccess)
+                                    {
+                                        // 文件段已全部排队，立即取出第一段发送
+                                        if (session.TryDequeueClass2Data(out var firstFrame) && firstFrame != null)
+                                        {
+                                            bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
+                                            await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                                            return;
+                                        }
+                                    }
+                                    
+                                    bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
+                                    await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
                                     return;
                                 }
                             }
@@ -581,6 +634,157 @@ public class Iec102Slave : IIec102Slave, IDisposable
             "EGF_FIVE_GF_QXZ"            // 0xA1
         };
         return class1Types.Contains(reportTypeCode);
+    }
+    
+    /// <summary>
+    /// 发送文件分段数据
+    /// </summary>
+    private async Task<bool> SendFileSegmentsAsync(ClientSession session, FileTransferTaskInfo fileTask, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 验证文件存在
+            if (!File.Exists(fileTask.FilePath))
+            {
+                _logger.LogError("文件不存在: {FilePath}", fileTask.FilePath);
+                return false;
+            }
+            
+            // 获取服务提供者来查询ReportType
+            if (_serviceProviderFactory == null)
+            {
+                _logger.LogError("服务提供者未设置，无法获取报表类型信息");
+                return false;
+            }
+            
+            var serviceProvider = _serviceProviderFactory();
+            using var scope = serviceProvider.CreateScope();
+            var reportTypeRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IReportTypeRepository>();
+            
+            if (reportTypeRepo == null)
+            {
+                _logger.LogError("无法获取报表类型仓储");
+                return false;
+            }
+            
+            var reportType = await reportTypeRepo.GetByIdAsync(fileTask.ReportTypeId);
+            if (reportType == null)
+            {
+                _logger.LogError("报表类型不存在: {ReportTypeId}", fileTask.ReportTypeId);
+                return false;
+            }
+            
+            // 获取TypeId
+            var typeId = DataClassification.GetTypeIdByReportType(reportType.Code);
+            if (!typeId.HasValue)
+            {
+                _logger.LogError("未知的报表类型代码: {Code}", reportType.Code);
+                return false;
+            }
+            
+            // 读取文件内容
+            var fileContent = await File.ReadAllBytesAsync(fileTask.FilePath, cancellationToken);
+            
+            // 验证文件大小
+            const int MaxFileSize = 20480; // 512 * 40
+            if (fileContent.Length > MaxFileSize)
+            {
+                _logger.LogError("文件过大: {Size} 字节 (最大 {MaxSize} 字节)", fileContent.Length, MaxFileSize);
+                return false;
+            }
+            
+            // 创建分段
+            var segments = CreateFileSegments(fileTask.FileName, fileContent);
+            
+            _logger.LogInformation("开始发送文件: {FileName}, 大小={Size}字节, 段数={SegmentCount}", 
+                fileTask.FileName, fileContent.Length, segments.Count);
+            
+            // 发送每个分段
+            for (int i = 0; i < segments.Count; i++)
+            {
+                bool isLastSegment = (i == segments.Count - 1);
+                byte cot = isLastSegment 
+                    ? CauseOfTransmission.FileTransferComplete    // 0x07
+                    : CauseOfTransmission.FileTransferInProgress; // 0x09
+                
+                // 根据数据级别排队到不同队列
+                if (fileTask.IsClass1)
+                {
+                    session.QueueClass1Data(new QueuedFrame 
+                    { 
+                        TypeId = typeId.Value, 
+                        Cot = cot, 
+                        Data = segments[i] 
+                    });
+                }
+                else
+                {
+                    session.QueueClass2Data(new QueuedFrame 
+                    { 
+                        TypeId = typeId.Value, 
+                        Cot = cot, 
+                        Data = segments[i] 
+                    });
+                }
+                
+                _logger.LogDebug("已排队分段 {Index}/{Total} (COT=0x{Cot:X2})", 
+                    i + 1, segments.Count, cot);
+            }
+            
+            _logger.LogInformation("文件分段已全部排队: {FileName}, 共{Count}段", 
+                fileTask.FileName, segments.Count);
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "发送文件分段时发生异常: {FileName}", fileTask.FileName);
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// 创建文件分段
+    /// </summary>
+    private List<byte[]> CreateFileSegments(string filename, byte[] fileContent)
+    {
+        var segments = new List<byte[]>();
+        const int FileNameFieldSize = 64;
+        const int MaxSegmentSize = 512;
+        
+        // 编码文件名为GBK
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var gbk = System.Text.Encoding.GetEncoding("GBK");
+        byte[] filenameBytes = new byte[FileNameFieldSize];
+        byte[] encodedName = gbk.GetBytes(filename);
+        
+        if (encodedName.Length > FileNameFieldSize)
+        {
+            _logger.LogWarning("文件名GBK编码后超过{Size}字节，将截断: {Length}字节", 
+                FileNameFieldSize, encodedName.Length);
+            encodedName = encodedName.Take(FileNameFieldSize).ToArray();
+        }
+        
+        Array.Copy(encodedName, filenameBytes, Math.Min(encodedName.Length, FileNameFieldSize));
+        
+        // 分段文件内容
+        int offset = 0;
+        while (offset < fileContent.Length)
+        {
+            int segmentDataSize = Math.Min(MaxSegmentSize, fileContent.Length - offset);
+            byte[] segment = new byte[FileNameFieldSize + segmentDataSize];
+            
+            // 复制文件名字段
+            Array.Copy(filenameBytes, 0, segment, 0, FileNameFieldSize);
+            
+            // 复制数据字段
+            Array.Copy(fileContent, offset, segment, FileNameFieldSize, segmentDataSize);
+            
+            segments.Add(segment);
+            offset += segmentDataSize;
+        }
+        
+        return segments;
     }
     
     /// <summary>
