@@ -46,13 +46,13 @@ This project implements an IEC-102 extended E file reception, parsing, storage, 
 - Time synchronization extension (TYP=0x8B)
 - Protocol logging
 
-### 📋 M4: File Transfer Channel (Next)
+### ✅ M4: File Transfer Channel
 - File segment upload (TYP=0x95-0xA8)
 - Reconciliation frame (0x90)
 - Error control (0x91-0x94)
 - FileTransferTask worker with backpressure
 
-### 📋 M5: Retention & Observability
+### 📋 M5: Retention & Observability  (Next)
 - Retention worker
 - Prometheus metrics & Grafana dashboards
 - Operation audit logging
