@@ -4,13 +4,10 @@ This project implements an IEC-102 extended E file reception, parsing, storage, 
 
 ## Features
 
-- **WebAPI Support**: E file upload and trigger reporting endpoints
-- **Link Layer**: TCP-based link layer compatible with IEC-102 protocol
-- **ASDU Management**: Support for custom Type IDs (0x90-0xA8) with ASDU encoding/decoding
+- **Web Admin**: Manager dashboard / configs / logs
 - **File Transfer**: Multi-frame file transfer with automatic reassembly
-- **E File Parser**: GBK encoding support, table-based parsing with upsert/insert logic
 - **Database**: OpenGauss/PostgreSQL with SqlSugarCore ORM
-- **Authentication**: JWT-based authentication with role-based authorization
+- **Authentication**: Cookie authentication with role-based authorization
 - **SFTP Downloads**: Automated file downloads from SFTP servers
 - **Scheduling**: Quartz.NET-based job scheduling (daily, monthly, cron)
 - **Manual Triggers**: REST API for on-demand file downloads
