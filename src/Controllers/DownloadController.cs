@@ -6,12 +6,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace LpsGateway.Controllers;
 
 /// <summary>
-/// 文件下载控制器
+/// 文件下载控制器 - MVC模式
 /// </summary>
 [Authorize]
-[Route("api/[controller]")]
-[ApiController]
-public class DownloadController : ControllerBase
+public class DownloadController : Controller
 {
     private readonly IScheduleManager _scheduleManager;
     private readonly IReportTypeRepository _reportTypeRepository;
@@ -28,11 +26,21 @@ public class DownloadController : ControllerBase
     }
 
     /// <summary>
+    /// 下载管理页面
+    /// </summary>
+    public async Task<IActionResult> Index()
+    {
+        var reportTypes = await _reportTypeRepository.GetAllAsync(true);
+        return View(reportTypes);
+    }
+
+    /// <summary>
     /// 手动触发文件下载
     /// </summary>
     /// <param name="reportTypeId">报表类型ID</param>
     /// <returns>操作结果</returns>
-    [HttpPost("trigger/{reportTypeId}")]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin,Operator")]
     public async Task<IActionResult> TriggerDownload(int reportTypeId)
     {
@@ -41,12 +49,14 @@ public class DownloadController : ControllerBase
             var reportType = await _reportTypeRepository.GetByIdAsync(reportTypeId);
             if (reportType == null)
             {
-                return NotFound(new { success = false, message = "报表类型不存在" });
+                TempData["ErrorMessage"] = "报表类型不存在";
+                return RedirectToAction(nameof(Index));
             }
 
             if (!reportType.Enabled)
             {
-                return BadRequest(new { success = false, message = "报表类型已禁用" });
+                TempData["ErrorMessage"] = "报表类型已禁用";
+                return RedirectToAction(nameof(Index));
             }
 
             await _scheduleManager.TriggerDownloadAsync(reportTypeId);
@@ -54,18 +64,14 @@ public class DownloadController : ControllerBase
             _logger.LogInformation("手动触发下载: ReportTypeId={ReportTypeId}, User={User}", 
                 reportTypeId, User.Identity?.Name);
 
-            return Ok(new 
-            { 
-                success = true, 
-                message = "下载任务已触发",
-                reportTypeId = reportTypeId,
-                reportTypeName = reportType.Name
-            });
+            TempData["SuccessMessage"] = $"下载任务已触发: {reportType.Name}";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "触发下载失败: ReportTypeId={ReportTypeId}", reportTypeId);
-            return StatusCode(500, new { success = false, message = "触发下载失败", error = ex.Message });
+            TempData["ErrorMessage"] = $"触发下载失败: {ex.Message}";
+            return RedirectToAction(nameof(Index));
         }
     }
 
@@ -73,7 +79,8 @@ public class DownloadController : ControllerBase
     /// 重新加载所有调度
     /// </summary>
     /// <returns>操作结果</returns>
-    [HttpPost("reload-schedules")]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ReloadSchedules()
     {
@@ -83,12 +90,14 @@ public class DownloadController : ControllerBase
 
             _logger.LogInformation("重新加载调度: User={User}", User.Identity?.Name);
 
-            return Ok(new { success = true, message = "调度已重新加载" });
+            TempData["SuccessMessage"] = "调度已重新加载";
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "重新加载调度失败");
-            return StatusCode(500, new { success = false, message = "重新加载调度失败", error = ex.Message });
+            TempData["ErrorMessage"] = $"重新加载调度失败: {ex.Message}";
+            return RedirectToAction(nameof(Index));
         }
     }
 }
