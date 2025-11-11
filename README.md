@@ -31,7 +31,7 @@ This project implements an IEC-102 extended E file reception, parsing, storage, 
 - Configuration management UI (ReportType, SftpConfig, Schedule)
 - **Documentation**: [M1-Implementation-Guide.md](docs/M1-Implementation-Guide.md)
 
-### ✅ M2: Scheduling & SFTP (Current)
+### ✅ M2: Scheduling & SFTP
 - **SqlSugarCore Migration**: Full .NET 8 compatibility (0 build warnings)
 - **Quartz.NET Integration**: Daily, monthly, and cron schedules
 - **SFTP Manager**: Password/key authentication, streaming downloads, path templates
@@ -39,14 +39,14 @@ This project implements an IEC-102 extended E file reception, parsing, storage, 
 - **Background Service**: Scheduler lifecycle management
 - **Documentation**: [M2-Implementation-Guide.md](docs/M2-Implementation-Guide.md)
 
-### 🔄 M3: TCP Server & Protocol Stack (Next)
+### ✅ M3: TCP Server & Protocol Stack
 - Async TCP Server
 - Control/Fixed/Variable frame handling
 - FCB/FCV/ACD/DFC processing
 - Time synchronization extension (TYP=0x8B)
 - Protocol logging
 
-### 📋 M4: File Transfer Channel
+### 📋 M4: File Transfer Channel (Next)
 - File segment upload (TYP=0x95-0xA8)
 - Reconciliation frame (0x90)
 - Error control (0x91-0x94)
