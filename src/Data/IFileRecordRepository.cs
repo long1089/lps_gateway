@@ -51,4 +51,9 @@ public interface IFileRecordRepository
     /// 批量获取已下载状态的文件记录（用于文件传输初始化）
     /// </summary>
     Task<List<FileRecord>> GetDownloadedFilesForTransferAsync(int? reportTypeId = null);
+    
+    /// <summary>
+    /// 尝试独占获取文件记录（原子更新processSessionId）
+    /// </summary>
+    Task<FileRecord?> TryAcquireFileForSessionAsync(int fileRecordId, string sessionId, IEnumerable<string> activeSessionIds);
 }

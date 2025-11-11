@@ -65,6 +65,17 @@ public class FileDownloadJob : IJob
             foreach (var remoteFile in files)
             {
                 var fileName = Path.GetFileName(remoteFile);
+                
+                // 检查文件是否已下载（根据文件名和报表类型）
+                var existingRecord = await _fileRecordRepository.GetByStatusAndReportTypeAsync("downloaded", reportTypeId);
+                var alreadyDownloaded = existingRecord.Any(r => r.OriginalFilename == fileName);
+                
+                if (alreadyDownloaded)
+                {
+                    _logger.LogInformation("文件已下载，跳过: {FileName}", fileName);
+                    continue;
+                }
+                
                 var localPath = Path.Combine("downloads", reportType.Code, fileName);
                 
                 var success = await _sftpManager.DownloadFileAsync(sftpConfigId, remoteFile, localPath, context.CancellationToken);
@@ -86,6 +97,7 @@ public class FileDownloadJob : IJob
                             FileSize = fileInfo.Exists ? fileInfo.Length : 0,
                             DownloadTime = DateTime.UtcNow,
                             Status = "downloaded",
+                            ProcessSessionId = null, // 初始为空，等待会话处理
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow
                         };

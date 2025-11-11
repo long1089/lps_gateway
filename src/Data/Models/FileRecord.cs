@@ -61,6 +61,12 @@ public class FileRecord
     /// </summary>
     [SugarColumn(Length = 20, IsNullable = false)]
     public string Status { get; set; } = "downloaded";
+    
+    /// <summary>
+    /// 处理会话ID（用于独占锁定）
+    /// </summary>
+    [SugarColumn(Length = 100, IsNullable = true, ColumnName = "process_session_id")]
+    public string? ProcessSessionId { get; set; }
 
     /// <summary>
     /// 保留策略过期时间

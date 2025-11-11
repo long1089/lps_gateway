@@ -179,4 +179,58 @@ public class FileRecordRepository : IFileRecordRepository
             return new List<FileRecord>();
         }
     }
+    
+    /// <summary>
+    /// 尝试独占获取文件记录（原子更新processSessionId）
+    /// </summary>
+    public async Task<FileRecord?> TryAcquireFileForSessionAsync(int fileRecordId, string sessionId, IEnumerable<string> activeSessionIds)
+    {
+        try
+        {
+            // 使用WHERE条件确保原子性：只有当processSessionId为空或不在活跃会话列表中时才更新
+            var activeSessionList = activeSessionIds.ToList();
+            
+            // 先获取文件记录
+            var fileRecord = await _db.Queryable<FileRecord>()
+                .Where(f => f.Id == fileRecordId && f.Status == "downloaded")
+                .FirstAsync();
+            
+            if (fileRecord == null)
+            {
+                return null;
+            }
+            
+            // 检查processSessionId是否可以独占
+            if (!string.IsNullOrEmpty(fileRecord.ProcessSessionId) && activeSessionList.Contains(fileRecord.ProcessSessionId))
+            {
+                _logger.LogDebug("文件记录已被其他会话独占: FileRecordId={FileRecordId}, SessionId={SessionId}", 
+                    fileRecordId, fileRecord.ProcessSessionId);
+                return null;
+            }
+            
+            // 尝试更新为当前会话ID
+            fileRecord.ProcessSessionId = sessionId;
+            fileRecord.UpdatedAt = DateTime.UtcNow;
+            
+            var updated = await _db.Updateable(fileRecord)
+                .Where(f => f.Id == fileRecordId)
+                .Where(f => f.ProcessSessionId == null || !activeSessionList.Contains(f.ProcessSessionId))
+                .ExecuteCommandAsync();
+            
+            if (updated > 0)
+            {
+                _logger.LogInformation("成功独占文件记录: FileRecordId={FileRecordId}, SessionId={SessionId}", 
+                    fileRecordId, sessionId);
+                return fileRecord;
+            }
+            
+            _logger.LogDebug("文件记录独占失败（并发竞争）: FileRecordId={FileRecordId}", fileRecordId);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "尝试独占文件记录失败: FileRecordId={FileRecordId}", fileRecordId);
+            return null;
+        }
+    }
 }

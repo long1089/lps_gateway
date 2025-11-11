@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
+using LpsGateway.Data.Models;
 
 namespace LpsGateway.Lib60870;
 
@@ -21,6 +22,9 @@ public class Iec102Slave : IIec102Slave, IDisposable
     private readonly ConcurrentDictionary<string, ClientSession> _sessions = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptTask;
+    
+    // 依赖注入用于文件传输初始化（可选）
+    private Func<IServiceProvider>? _serviceProviderFactory;
     
     /// <summary>
     /// 是否正在运行
@@ -72,6 +76,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
         _port = port;
         _stationAddress = stationAddress;
         _logger = logger;
+    }
+    
+    /// <summary>
+    /// 设置服务提供者工厂（用于文件传输初始化）
+    /// </summary>
+    public void SetServiceProviderFactory(Func<IServiceProvider> factory)
+    {
+        _serviceProviderFactory = factory;
     }
     
     /// <summary>
@@ -367,19 +379,92 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("处理1级数据请求: {Endpoint}", session.Endpoint);
         
+        // 先检查会话中是否有待传输的1级文件任务
+        if (session.HasFileTransferTasks())
+        {
+            if (session.TryDequeueFileTransferTask(out var fileTask) && fileTask != null && fileTask.IsClass1)
+            {
+                _logger.LogInformation("从会话中取出1级文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                    fileTask.FileRecordId, fileTask.FileName);
+                
+                // TODO: 实现文件传输逻辑
+                bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
+                await SendNoDataAsync(session, hasMoreData, cancellationToken);
+                return;
+            }
+        }
+        
         // 从会话的1级队列中取数据
         if (session.TryDequeueClass1Data(out var queuedFrame) && queuedFrame != null)
         {
             // 检查是否还有更多1级数据（设置ACD标志）
-            bool hasMoreClass1Data = session.HasClass1Data();
+            bool hasMoreClass1Data = session.HasClass1Data() || session.HasFileTransferTasks();
             
             await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasMoreClass1Data, cancellationToken);
+            return;
         }
-        else
+        
+        // 无1级队列数据，尝试初始化1级文件传输
+        if (_serviceProviderFactory != null)
         {
-            // 无数据，ACD=0
-            await SendNoDataAsync(session, false, cancellationToken);
+            try
+            {
+                var serviceProvider = _serviceProviderFactory();
+                using var scope = serviceProvider.CreateScope();
+                var fileRecordRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IFileRecordRepository>();
+                var reportTypeRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IReportTypeRepository>();
+                
+                if (fileRecordRepo != null && reportTypeRepo != null)
+                {
+                    var reportTypes = await reportTypeRepo.GetAllAsync();
+                    var activeSessionIds = GetActiveSessionEndpoints();
+                    
+                    // 获取1级数据文件（Class1数据类型）
+                    foreach (var reportType in reportTypes.Where(rt => rt.Enabled && IsClass1DataType(rt.Code)))
+                    {
+                        var files = await fileRecordRepo.GetDownloadedFilesForTransferAsync(reportType.Id);
+                        
+                        foreach (var file in files)
+                        {
+                            var acquiredFile = await fileRecordRepo.TryAcquireFileForSessionAsync(
+                                file.Id, session.Endpoint, activeSessionIds);
+                            
+                            if (acquiredFile != null)
+                            {
+                                session.AddFileTransferTask(new FileTransferTaskInfo
+                                {
+                                    FileRecordId = acquiredFile.Id,
+                                    FileName = acquiredFile.OriginalFilename,
+                                    FilePath = acquiredFile.StoragePath,
+                                    FileSize = acquiredFile.FileSize,
+                                    ReportTypeId = acquiredFile.ReportTypeId,
+                                    IsClass1 = true
+                                });
+                                
+                                _logger.LogInformation("为会话添加1级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                    acquiredFile.Id, acquiredFile.OriginalFilename);
+                                
+                                // 立即处理这个任务
+                                if (session.TryDequeueFileTransferTask(out var task) && task != null)
+                                {
+                                    // TODO: 实现文件传输
+                                    bool hasMoreData = session.HasFileTransferTasks();
+                                    await SendNoDataAsync(session, hasMoreData, cancellationToken);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "初始化1级数据文件传输时发生异常");
+            }
         }
+        
+        // 无数据，ACD=0
+        await SendNoDataAsync(session, false, cancellationToken);
     }
     
     /// <summary>
@@ -389,6 +474,22 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("处理2级数据请求: {Endpoint}", session.Endpoint);
         
+        // 先检查会话中是否有待传输的文件任务
+        if (session.TryDequeueFileTransferTask(out var fileTask) && fileTask != null)
+        {
+            _logger.LogInformation("从会话中取出文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                fileTask.FileRecordId, fileTask.FileName);
+            
+            // TODO: 在这里实现文件传输逻辑
+            // 读取文件内容，分段发送
+            // 这里暂时返回无数据，实际实现需要调用文件传输服务
+            
+            // 检查是否还有文件任务或1级数据
+            bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
+            await SendNoDataAsync(session, hasMoreData, cancellationToken);
+            return;
+        }
+        
         // 从会话的2级队列中取数据
         if (session.TryDequeueClass2Data(out var queuedFrame) && queuedFrame != null)
         {
@@ -396,13 +497,90 @@ public class Iec102Slave : IIec102Slave, IDisposable
             bool hasClass1Data = session.HasClass1Data();
             
             await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasClass1Data, cancellationToken);
+            return;
         }
-        else
+        
+        // 无2级数据，尝试初始化文件传输
+        if (_serviceProviderFactory != null)
         {
-            // 无2级数据，检查是否有1级数据（设置ACD标志）
-            bool hasClass1Data = session.HasClass1Data();
-            await SendNoDataAsync(session, hasClass1Data, cancellationToken);
+            try
+            {
+                var serviceProvider = _serviceProviderFactory();
+                using var scope = serviceProvider.CreateScope();
+                var fileRecordRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IFileRecordRepository>();
+                var reportTypeRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IReportTypeRepository>();
+                
+                if (fileRecordRepo != null && reportTypeRepo != null)
+                {
+                    // 获取所有报表类型
+                    var reportTypes = await reportTypeRepo.GetAllAsync();
+                    var activeSessionIds = GetActiveSessionEndpoints();
+                    
+                    // 优先获取2级数据文件（非Class1数据类型）
+                    foreach (var reportType in reportTypes.Where(rt => rt.Enabled && !IsClass1DataType(rt.Code)))
+                    {
+                        var files = await fileRecordRepo.GetDownloadedFilesForTransferAsync(reportType.Id);
+                        
+                        foreach (var file in files)
+                        {
+                            // 尝试独占获取文件
+                            var acquiredFile = await fileRecordRepo.TryAcquireFileForSessionAsync(
+                                file.Id, session.Endpoint, activeSessionIds);
+                            
+                            if (acquiredFile != null)
+                            {
+                                // 成功独占，添加到会话任务列表
+                                session.AddFileTransferTask(new FileTransferTaskInfo
+                                {
+                                    FileRecordId = acquiredFile.Id,
+                                    FileName = acquiredFile.OriginalFilename,
+                                    FilePath = acquiredFile.StoragePath,
+                                    FileSize = acquiredFile.FileSize,
+                                    ReportTypeId = acquiredFile.ReportTypeId,
+                                    IsClass1 = false
+                                });
+                                
+                                _logger.LogInformation("为会话添加2级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                    acquiredFile.Id, acquiredFile.OriginalFilename);
+                                
+                                // 立即处理这个任务
+                                if (session.TryDequeueFileTransferTask(out var task) && task != null)
+                                {
+                                    // TODO: 实现文件传输
+                                    bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
+                                    await SendNoDataAsync(session, hasMoreData, cancellationToken);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "初始化2级数据文件传输时发生异常");
+            }
         }
+        
+        // 无2级数据，检查是否有1级数据（设置ACD标志）
+        bool hasClass1DataFinal = session.HasClass1Data();
+        await SendNoDataAsync(session, hasClass1DataFinal, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 判断报表类型代码是否为1级数据
+    /// </summary>
+    private bool IsClass1DataType(string reportTypeCode)
+    {
+        var class1Types = new HashSet<string>
+        {
+            "EFJ_FIVE_WIND_TOWER",      // 0x9A
+            "EFJ_DQ_RESULT_UP",          // 0x9B
+            "EFJ_CDQ_RESULT_UP",         // 0x9C
+            "EFJ_NWP_UP",                // 0x9D
+            "EGF_FIVE_GF_QXZ"            // 0xA1
+        };
+        return class1Types.Contains(reportTypeCode);
     }
     
     /// <summary>
@@ -830,6 +1008,9 @@ internal class ClientSession : IDisposable
     private readonly ConcurrentQueue<QueuedFrame> _class1Queue = new();
     private readonly ConcurrentQueue<QueuedFrame> _class2Queue = new();
     
+    // 会话级文件传输任务列表（内存中，不保存到数据库）
+    private readonly ConcurrentQueue<FileTransferTaskInfo> _fileTransferTasks = new();
+    
     private bool _expectedFcb;
     private readonly ILogger _logger;
     
@@ -900,6 +1081,28 @@ internal class ClientSession : IDisposable
         return _class2Queue.TryDequeue(out frame);
     }
     
+    /// <summary>
+    /// 添加文件传输任务到会话
+    /// </summary>
+    public void AddFileTransferTask(FileTransferTaskInfo task)
+    {
+        _fileTransferTasks.Enqueue(task);
+        _logger.LogDebug("会话 {Endpoint} 添加文件传输任务: FileRecordId={FileRecordId}", Endpoint, task.FileRecordId);
+    }
+    
+    /// <summary>
+    /// 检查是否有待传输的文件任务
+    /// </summary>
+    public bool HasFileTransferTasks() => !_fileTransferTasks.IsEmpty;
+    
+    /// <summary>
+    /// 尝试取出文件传输任务
+    /// </summary>
+    public bool TryDequeueFileTransferTask(out FileTransferTaskInfo? task)
+    {
+        return _fileTransferTasks.TryDequeue(out task);
+    }
+    
     public void Dispose()
     {
         SendLock.Dispose();
@@ -916,6 +1119,20 @@ internal class QueuedFrame
     public byte TypeId { get; set; }
     public byte Cot { get; set; }
     public byte[] Data { get; set; } = Array.Empty<byte>();
+}
+
+/// <summary>
+/// 文件传输任务信息（会话内存中）
+/// </summary>
+internal class FileTransferTaskInfo
+{
+    public int FileRecordId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+    public int ReportTypeId { get; set; }
+    public bool IsClass1 { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>

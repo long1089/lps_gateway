@@ -32,6 +32,9 @@ public class Iec102SlaveHostedService : IHostedService
             _options.StationAddress,
             slaveLogger);
         
+        // 设置服务提供者工厂，用于文件传输初始化
+        _slave.SetServiceProviderFactory(() => _serviceProvider);
+        
         // 订阅事件
         _slave.ClientConnected += OnClientConnected;
         _slave.ClientDisconnected += OnClientDisconnected;
@@ -61,26 +64,7 @@ public class Iec102SlaveHostedService : IHostedService
     private void OnClientConnected(object? sender, string endpoint)
     {
         _logger.LogInformation("主站已连接: {Endpoint}", endpoint);
-        
-        // 异步初始化文件传输任务
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                using var scope = _serviceProvider.CreateScope();
-                var initializer = scope.ServiceProvider.GetRequiredService<IFileTransferInitializer>();
-                
-                // 使用endpoint作为sessionId
-                var sessionId = endpoint;
-                var count = await initializer.InitializeTransfersForSessionAsync(sessionId, endpoint);
-                
-                _logger.LogInformation("为主站 {Endpoint} 初始化了 {Count} 个文件传输任务", endpoint, count);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "初始化文件传输任务时发生异常: {Endpoint}", endpoint);
-            }
-        });
+        // 不再在连接时自动初始化，而是在收到2级数据请求时处理
     }
     
     private void OnClientDisconnected(object? sender, string endpoint)
