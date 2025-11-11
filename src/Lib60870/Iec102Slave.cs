@@ -368,7 +368,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
         _logger.LogInformation("处理1级数据请求: {Endpoint}", session.Endpoint);
         
         // 从会话的1级队列中取数据
-        if (session.TryDequeueClass1Data(out var queuedFrame))
+        if (session.TryDequeueClass1Data(out var queuedFrame) && queuedFrame != null)
         {
             // 检查是否还有更多1级数据（设置ACD标志）
             bool hasMoreClass1Data = session.HasClass1Data();
@@ -390,7 +390,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
         _logger.LogInformation("处理2级数据请求: {Endpoint}", session.Endpoint);
         
         // 从会话的2级队列中取数据
-        if (session.TryDequeueClass2Data(out var queuedFrame))
+        if (session.TryDequeueClass2Data(out var queuedFrame) && queuedFrame != null)
         {
             // 检查是否有1级数据需要传输（设置ACD标志）
             bool hasClass1Data = session.HasClass1Data();
