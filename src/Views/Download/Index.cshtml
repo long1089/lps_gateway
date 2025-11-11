@@ -1,0 +1,115 @@
+@model IEnumerable<ReportType>
+@{
+    ViewData["Title"] = "文件下载管理";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>文件下载管理</h2>
+    @if (User.IsInRole("Admin"))
+    {
+        <form asp-action="ReloadSchedules" method="post" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-secondary" onclick="return confirm('确定要重新加载所有调度吗？');">
+                <i class="bi bi-arrow-clockwise"></i> 重新加载调度
+            </button>
+        </form>
+    }
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="card">
+    <div class="card-body">
+        <div class="alert alert-info">
+            <strong>说明：</strong>在此页面可以手动触发报表类型的文件下载任务。点击"触发下载"按钮将立即执行一次该报表类型的文件下载。
+        </div>
+
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>报表类型</th>
+                    <th>编码</th>
+                    <th>描述</th>
+                    <th>SFTP配置</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model)
+                {
+                    <tr>
+                        <td>@item.Name</td>
+                        <td><code>@item.Code</code></td>
+                        <td>@item.Description</td>
+                        <td>
+                            @if (item.DefaultSftpConfigId.HasValue)
+                            {
+                                <span class="badge bg-info">配置ID: @item.DefaultSftpConfigId</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning">未配置</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.Enabled)
+                            {
+                                <span class="badge bg-success">启用</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">禁用</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.Enabled && item.DefaultSftpConfigId.HasValue)
+                            {
+                                @if (User.IsInRole("Admin") || User.IsInRole("Operator"))
+                                {
+                                    <form asp-action="TriggerDownload" method="post" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="reportTypeId" value="@item.Id" />
+                                        <button type="submit" class="btn btn-sm btn-primary" 
+                                                onclick="return confirm('确定要触发下载 @item.Name 吗？');">
+                                            <i class="bi bi-download"></i> 触发下载
+                                        </button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">无权限</span>
+                                }
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-secondary" disabled>
+                                    <i class="bi bi-download"></i> 不可用
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        
+        @if (!Model.Any())
+        {
+            <p class="text-center text-muted my-4">暂无报表类型，请先在报表类型管理中创建</p>
+        }
+    </div>
+</div>

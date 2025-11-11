@@ -1,6 +1,6 @@
 # LPS Gateway - IEC-102 Extended E File Reception System
 
-This project implements an IEC-102 extended E file reception, parsing, storage, and reporting system running on .NET 8 WebAPI with OpenGauss database and SqlSugar ORM.
+This project implements an IEC-102 extended E file reception, parsing, storage, and reporting system running on .NET 8 WebAPI with OpenGauss database and SqlSugarCore ORM.
 
 ## Features
 
@@ -9,9 +9,60 @@ This project implements an IEC-102 extended E file reception, parsing, storage, 
 - **ASDU Management**: Support for custom Type IDs (0x90-0xA8) with ASDU encoding/decoding
 - **File Transfer**: Multi-frame file transfer with automatic reassembly
 - **E File Parser**: GBK encoding support, table-based parsing with upsert/insert logic
-- **Database**: OpenGauss/PostgreSQL with SqlSugar ORM
+- **Database**: OpenGauss/PostgreSQL with SqlSugarCore ORM
+- **Authentication**: JWT-based authentication with role-based authorization
+- **SFTP Downloads**: Automated file downloads from SFTP servers
+- **Scheduling**: Quartz.NET-based job scheduling (daily, monthly, cron)
+- **Manual Triggers**: REST API for on-demand file downloads
 - **Testing**: Unit tests with xUnit and Moq
 - **Tools**: Master station simulator for integration testing
+
+## Milestones
+
+### ✅ M0: Requirements & Design Freeze
+- Extended ASDU specification (time sync, on-demand)
+- Data model design with indexing strategy
+- API design with permission model
+
+### ✅ M1: Project Skeleton & Infrastructure
+- .NET 8 MVC project with layered architecture
+- SqlSugarCore + OpenGauss connection and migrations
+- JWT authentication with role-based authorization
+- Configuration management UI (ReportType, SftpConfig, Schedule)
+- **Documentation**: [M1-Implementation-Guide.md](docs/M1-Implementation-Guide.md)
+
+### ✅ M2: Scheduling & SFTP (Current)
+- **SqlSugarCore Migration**: Full .NET 8 compatibility (0 build warnings)
+- **Quartz.NET Integration**: Daily, monthly, and cron schedules
+- **SFTP Manager**: Password/key authentication, streaming downloads, path templates
+- **Manual Trigger API**: On-demand file downloads via REST API
+- **Background Service**: Scheduler lifecycle management
+- **Documentation**: [M2-Implementation-Guide.md](docs/M2-Implementation-Guide.md)
+
+### 🔄 M3: TCP Server & Protocol Stack (Next)
+- Async TCP Server
+- Control/Fixed/Variable frame handling
+- FCB/FCV/ACD/DFC processing
+- Time synchronization extension (TYP=0x8B)
+- Protocol logging
+
+### 📋 M4: File Transfer Channel
+- File segment upload (TYP=0x95-0xA8)
+- Reconciliation frame (0x90)
+- Error control (0x91-0x94)
+- FileTransferTask worker with backpressure
+
+### 📋 M5: Retention & Observability
+- Retention worker
+- Prometheus metrics & Grafana dashboards
+- Operation audit logging
+- Disk usage alerts
+
+### 📋 M6: Integration & Testing
+- Master station integration testing
+- Performance testing (concurrency, bandwidth, DB)
+- Disaster recovery testing
+- Documentation & operation manual
 
 ## Architecture
 

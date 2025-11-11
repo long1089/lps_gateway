@@ -15,7 +15,7 @@ public class EFileRepository : IEFileRepository
     /// <summary>
     /// 构造函数
     /// </summary>
-    /// <param name="db">SqlSugar 数据库客户端</param>
+    /// <param name="db">SqlSugarCore 数据库客户端</param>
     /// <param name="logger">日志记录器</param>
     public EFileRepository(ISqlSugarClient db, ILogger<EFileRepository> logger)
     {
