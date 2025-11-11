@@ -111,9 +111,9 @@ public class Iec102MasterSlaveTests
         await master.ConnectAsync();
         await Task.Delay(100);
         
-        // Queue some Class 2 data
+        // Queue some Class 2 data to all sessions
         var testData = new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 };
-        slave.QueueClass2Data(0x95, 0x08, testData);
+        slave.QueueClass2DataToAll(0x95, 0x08, testData);
         
         Iec102Frame? receivedFrame = null;
         master.FrameReceived += (sender, frame) =>

@@ -11,7 +11,7 @@ namespace LpsGateway.Lib60870;
 /// <remarks>
 /// 作为从站（从动端），监听来自主站的连接并响应请求
 /// </remarks>
-public class Iec102Slave : IDisposable
+public class Iec102Slave : IIec102Slave, IDisposable
 {
     private readonly int _port;
     private readonly ushort _stationAddress;
@@ -21,10 +21,6 @@ public class Iec102Slave : IDisposable
     private readonly ConcurrentDictionary<string, ClientSession> _sessions = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptTask;
-    
-    // 数据队列：1级和2级
-    private readonly ConcurrentQueue<QueuedFrame> _class1Queue = new();
-    private readonly ConcurrentQueue<QueuedFrame> _class2Queue = new();
     
     /// <summary>
     /// 是否正在运行
@@ -45,6 +41,31 @@ public class Iec102Slave : IDisposable
     /// 客户端断开事件
     /// </summary>
     public event EventHandler<string>? ClientDisconnected;
+    
+    /// <summary>
+    /// 文件对账事件（主站确认接收）
+    /// </summary>
+    public event EventHandler<FileReconciliationEventArgs>? FileReconciliation;
+    
+    /// <summary>
+    /// 文件重传请求事件
+    /// </summary>
+    public event EventHandler<FileRetransmitEventArgs>? FileRetransmitRequest;
+    
+    /// <summary>
+    /// 文件过长确认事件（来自主站）
+    /// </summary>
+    public event EventHandler<FileErrorEventArgs>? FileTooLongAck;
+    
+    /// <summary>
+    /// 文件名格式错误确认事件（来自主站）
+    /// </summary>
+    public event EventHandler<FileErrorEventArgs>? InvalidFileNameAck;
+    
+    /// <summary>
+    /// 单帧报文过长确认事件（来自主站）
+    /// </summary>
+    public event EventHandler<FileErrorEventArgs>? FrameTooLongAck;
     
     public Iec102Slave(int port, ushort stationAddress, ILogger<Iec102Slave> logger)
     {
@@ -329,8 +350,8 @@ public class Iec102Slave : IDisposable
     {
         _logger.LogInformation("处理链路状态请求: {Endpoint}", session.Endpoint);
         
-        // 检查是否有1级数据待发送
-        var hasClass1Data = !_class1Queue.IsEmpty;
+        // 检查该会话是否有1级数据待发送
+        var hasClass1Data = session.HasClass1Data();
         
         // 发送链路状态响应
         var control = ControlField.CreateSlaveFrame(FunctionCodes.LinkStatusOrAccessDemand, hasClass1Data, false);
@@ -346,14 +367,18 @@ public class Iec102Slave : IDisposable
     {
         _logger.LogInformation("处理1级数据请求: {Endpoint}", session.Endpoint);
         
-        if (_class1Queue.TryDequeue(out var queuedFrame))
+        // 从会话的1级队列中取数据
+        if (session.TryDequeueClass1Data(out var queuedFrame))
         {
-            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, cancellationToken);
+            // 检查是否还有更多1级数据（设置ACD标志）
+            bool hasMoreClass1Data = session.HasClass1Data();
+            
+            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasMoreClass1Data, cancellationToken);
         }
         else
         {
-            // 无数据
-            await SendNoDataAsync(session, cancellationToken);
+            // 无数据，ACD=0
+            await SendNoDataAsync(session, false, cancellationToken);
         }
     }
     
@@ -364,14 +389,19 @@ public class Iec102Slave : IDisposable
     {
         _logger.LogInformation("处理2级数据请求: {Endpoint}", session.Endpoint);
         
-        if (_class2Queue.TryDequeue(out var queuedFrame))
+        // 从会话的2级队列中取数据
+        if (session.TryDequeueClass2Data(out var queuedFrame))
         {
-            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, cancellationToken);
+            // 检查是否有1级数据需要传输（设置ACD标志）
+            bool hasClass1Data = session.HasClass1Data();
+            
+            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasClass1Data, cancellationToken);
         }
         else
         {
-            // 无数据
-            await SendNoDataAsync(session, cancellationToken);
+            // 无2级数据，检查是否有1级数据（设置ACD标志）
+            bool hasClass1Data = session.HasClass1Data();
+            await SendNoDataAsync(session, hasClass1Data, cancellationToken);
         }
     }
     
@@ -412,6 +442,31 @@ public class Iec102Slave : IDisposable
             // 发送确认
             await SendFileCancelConfirmAsync(session, cancellationToken);
         }
+        // 处理文件对账（主站确认接收）
+        else if (typeId == 0x90 && cot == 0x0A)
+        {
+            await HandleFileReconciliationAsync(session, frame.UserData, cancellationToken);
+        }
+        // 处理文件重传请求
+        else if (typeId == 0x91 && cot == 0x0D)
+        {
+            await HandleFileRetransmitAsync(session, frame.UserData, cancellationToken);
+        }
+        // 处理文件过长确认（主站）
+        else if (typeId == 0x92 && cot == 0x0F)
+        {
+            await HandleFileTooLongFromMasterAsync(session, cancellationToken);
+        }
+        // 处理文件名格式错误确认（主站）
+        else if (typeId == 0x93 && cot == 0x11)
+        {
+            await HandleInvalidFileNameFromMasterAsync(session, cancellationToken);
+        }
+        // 处理单帧报文过长确认（主站）
+        else if (typeId == 0x94 && cot == 0x13)
+        {
+            await HandleFrameTooLongFromMasterAsync(session, cancellationToken);
+        }
         else
         {
             // 发送肯定确认
@@ -434,9 +489,9 @@ public class Iec102Slave : IDisposable
     /// <summary>
     /// 发送无数据响应
     /// </summary>
-    private async Task SendNoDataAsync(ClientSession session, CancellationToken cancellationToken)
+    private async Task SendNoDataAsync(ClientSession session, bool acd, CancellationToken cancellationToken)
     {
-        var control = ControlField.CreateSlaveFrame(FunctionCodes.NoDataAvailable);
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.NoDataAvailable, acd, false);
         var frame = Iec102Frame.BuildFixedFrame(control, _stationAddress);
         
         await SendFrameAsync(session, frame, cancellationToken);
@@ -449,11 +504,12 @@ public class Iec102Slave : IDisposable
         ClientSession session, 
         byte typeId, 
         byte cot, 
-        byte[] data, 
+        byte[] data,
+        bool acd,
         CancellationToken cancellationToken)
     {
-        var hasMore = !_class1Queue.IsEmpty || !_class2Queue.IsEmpty;
-        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData, hasMore, false);
+        // ACD标志表示是否有1级数据需要传输
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData, acd, false);
         
         var asdu = new List<byte>
         {
@@ -556,21 +612,191 @@ public class Iec102Slave : IDisposable
     }
     
     /// <summary>
-    /// 排队1级数据
+    /// 处理文件对账（主站确认接收）
     /// </summary>
-    public void QueueClass1Data(byte typeId, byte cot, byte[] data)
+    private async Task HandleFileReconciliationAsync(ClientSession session, byte[] userData, CancellationToken cancellationToken)
     {
-        _class1Queue.Enqueue(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
-        _logger.LogDebug("排队1级数据: TypeId=0x{TypeId:X2}", typeId);
+        if (userData.Length < 10) // TYP(1) + VSQ(1) + COT(1) + CAddr(2) + RAddr(1) + FileLength(4)
+        {
+            _logger.LogWarning("文件对账数据长度不足");
+            return;
+        }
+        
+        // 提取文件长度（小端序）
+        int fileLength = userData[6] | (userData[7] << 8) | (userData[8] << 16) | (userData[9] << 24);
+        
+        _logger.LogInformation("收到文件对账: FileLength={FileLength}", fileLength);
+        
+        // 触发事件
+        FileReconciliation?.Invoke(this, new FileReconciliationEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            FileLength = fileLength 
+        });
+        
+        // 发送确认（子站确认长度一致）
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
+        
+        var asdu = new List<byte>
+        {
+            0x90, // TypeId: Reconciliation
+            0x01, // VSQ
+            0x0B, // COT: 子站确认主站接收长度一致
+            (byte)(_stationAddress & 0xFF),
+            (byte)((_stationAddress >> 8) & 0xFF),
+            0x00  // RecordAddr
+        };
+        
+        var frame = Iec102Frame.BuildVariableFrame(control, _stationAddress, asdu.ToArray());
+        
+        await SendFrameAsync(session, frame, cancellationToken);
     }
     
     /// <summary>
-    /// 排队2级数据
+    /// 处理文件重传请求
     /// </summary>
-    public void QueueClass2Data(byte typeId, byte cot, byte[] data)
+    private async Task HandleFileRetransmitAsync(ClientSession session, byte[] userData, CancellationToken cancellationToken)
     {
-        _class2Queue.Enqueue(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
-        _logger.LogDebug("排队2级数据: TypeId=0x{TypeId:X2}", typeId);
+        _logger.LogInformation("收到文件重传请求");
+        
+        // 触发事件
+        FileRetransmitRequest?.Invoke(this, new FileRetransmitEventArgs 
+        { 
+            Endpoint = session.Endpoint 
+        });
+        
+        // 发送确认（子站确认重传）
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
+        
+        var asdu = new List<byte>
+        {
+            0x91, // TypeId: Retransmit
+            0x01, // VSQ
+            0x0E, // COT: 子站确认文件重传
+            (byte)(_stationAddress & 0xFF),
+            (byte)((_stationAddress >> 8) & 0xFF),
+            0x00  // RecordAddr
+        };
+        
+        var frame = Iec102Frame.BuildVariableFrame(control, _stationAddress, asdu.ToArray());
+        
+        await SendFrameAsync(session, frame, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 处理文件过长确认（来自主站）
+    /// </summary>
+    private async Task HandleFileTooLongFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("收到主站文件过长确认");
+        
+        // 触发事件
+        FileTooLongAck?.Invoke(this, new FileErrorEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            ErrorType = "FileTooLong" 
+        });
+        
+        // 发送确认
+        await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 处理文件名格式错误确认（来自主站）
+    /// </summary>
+    private async Task HandleInvalidFileNameFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("收到主站文件名格式错误确认");
+        
+        // 触发事件
+        InvalidFileNameAck?.Invoke(this, new FileErrorEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            ErrorType = "InvalidFileName" 
+        });
+        
+        // 发送确认
+        await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 处理单帧报文过长确认（来自主站）
+    /// </summary>
+    private async Task HandleFrameTooLongFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("收到主站单帧报文过长确认");
+        
+        // 触发事件
+        FrameTooLongAck?.Invoke(this, new FileErrorEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            ErrorType = "FrameTooLong" 
+        });
+        
+        // 发送确认
+        await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 排队1级数据到指定会话
+    /// </summary>
+    public void QueueClass1DataToSession(string endpoint, byte typeId, byte cot, byte[] data)
+    {
+        if (_sessions.TryGetValue(endpoint, out var session))
+        {
+            session.QueueClass1Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        else
+        {
+            _logger.LogWarning("会话不存在，无法排队1级数据: {Endpoint}", endpoint);
+        }
+    }
+    
+    /// <summary>
+    /// 排队2级数据到指定会话
+    /// </summary>
+    public void QueueClass2DataToSession(string endpoint, byte typeId, byte cot, byte[] data)
+    {
+        if (_sessions.TryGetValue(endpoint, out var session))
+        {
+            session.QueueClass2Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        else
+        {
+            _logger.LogWarning("会话不存在，无法排队2级数据: {Endpoint}", endpoint);
+        }
+    }
+    
+    /// <summary>
+    /// 排队1级数据到所有会话（广播）
+    /// </summary>
+    public void QueueClass1DataToAll(byte typeId, byte cot, byte[] data)
+    {
+        foreach (var session in _sessions.Values)
+        {
+            session.QueueClass1Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        _logger.LogDebug("广播1级数据到所有会话: TypeId=0x{TypeId:X2}, 会话数={Count}", typeId, _sessions.Count);
+    }
+    
+    /// <summary>
+    /// 排队2级数据到所有会话（广播）
+    /// </summary>
+    public void QueueClass2DataToAll(byte typeId, byte cot, byte[] data)
+    {
+        foreach (var session in _sessions.Values)
+        {
+            session.QueueClass2Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        _logger.LogDebug("广播2级数据到所有会话: TypeId=0x{TypeId:X2}, 会话数={Count}", typeId, _sessions.Count);
+    }
+    
+    /// <summary>
+    /// 获取所有活动会话的端点列表
+    /// </summary>
+    public IEnumerable<string> GetActiveSessionEndpoints()
+    {
+        return _sessions.Keys.ToList();
     }
     
     public void Dispose()
@@ -590,12 +816,19 @@ public class Iec102Slave : IDisposable
 /// <summary>
 /// 客户端会话
 /// </summary>
+/// <remarks>
+/// 每个会话维护独立的数据队列和FCB状态，支持多客户端并发
+/// </remarks>
 internal class ClientSession : IDisposable
 {
     public TcpClient Client { get; }
     public NetworkStream Stream { get; }
     public string Endpoint { get; }
     public SemaphoreSlim SendLock { get; } = new(1, 1);
+    
+    // 会话级数据队列
+    private readonly ConcurrentQueue<QueuedFrame> _class1Queue = new();
+    private readonly ConcurrentQueue<QueuedFrame> _class2Queue = new();
     
     private bool _expectedFcb;
     private readonly ILogger _logger;
@@ -621,6 +854,50 @@ internal class ClientSession : IDisposable
     {
         _expectedFcb = false;
         _logger.LogDebug("FCB 状态复位: {Endpoint}", Endpoint);
+    }
+    
+    /// <summary>
+    /// 排队1级数据
+    /// </summary>
+    public void QueueClass1Data(QueuedFrame frame)
+    {
+        _class1Queue.Enqueue(frame);
+        _logger.LogDebug("会话 {Endpoint} 排队1级数据: TypeId=0x{TypeId:X2}", Endpoint, frame.TypeId);
+    }
+    
+    /// <summary>
+    /// 排队2级数据
+    /// </summary>
+    public void QueueClass2Data(QueuedFrame frame)
+    {
+        _class2Queue.Enqueue(frame);
+        _logger.LogDebug("会话 {Endpoint} 排队2级数据: TypeId=0x{TypeId:X2}", Endpoint, frame.TypeId);
+    }
+    
+    /// <summary>
+    /// 检查是否有1级数据
+    /// </summary>
+    public bool HasClass1Data() => !_class1Queue.IsEmpty;
+    
+    /// <summary>
+    /// 检查是否有2级数据
+    /// </summary>
+    public bool HasClass2Data() => !_class2Queue.IsEmpty;
+    
+    /// <summary>
+    /// 尝试取出1级数据
+    /// </summary>
+    public bool TryDequeueClass1Data(out QueuedFrame? frame)
+    {
+        return _class1Queue.TryDequeue(out frame);
+    }
+    
+    /// <summary>
+    /// 尝试取出2级数据
+    /// </summary>
+    public bool TryDequeueClass2Data(out QueuedFrame? frame)
+    {
+        return _class2Queue.TryDequeue(out frame);
     }
     
     public void Dispose()
@@ -649,3 +926,30 @@ public class FrameReceivedEventArgs : EventArgs
     public string Endpoint { get; set; } = string.Empty;
     public Iec102Frame Frame { get; set; } = null!;
 }
+
+/// <summary>
+/// 文件对账事件参数
+/// </summary>
+public class FileReconciliationEventArgs : EventArgs
+{
+    public string Endpoint { get; set; } = string.Empty;
+    public int FileLength { get; set; }
+}
+
+/// <summary>
+/// 文件重传事件参数
+/// </summary>
+public class FileRetransmitEventArgs : EventArgs
+{
+    public string Endpoint { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 文件错误事件参数
+/// </summary>
+public class FileErrorEventArgs : EventArgs
+{
+    public string Endpoint { get; set; } = string.Empty;
+    public string ErrorType { get; set; } = string.Empty;
+}
+
