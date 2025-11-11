@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using LpsGateway.Services;
 
 namespace LpsGateway.HostedServices;
 
@@ -10,15 +11,18 @@ namespace LpsGateway.HostedServices;
 public class Iec102SlaveHostedService : IHostedService
 {
     private readonly Lib60870.Iec102Slave _slave;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<Iec102SlaveHostedService> _logger;
     private readonly Iec102SlaveOptions _options;
     
     public Iec102SlaveHostedService(
         ILogger<Iec102SlaveHostedService> logger,
-        IOptions<Iec102SlaveOptions> options)
+        IOptions<Iec102SlaveOptions> options,
+        IServiceProvider serviceProvider)
     {
         _logger = logger;
         _options = options.Value;
+        _serviceProvider = serviceProvider;
         
         var slaveLogger = logger as ILogger<Lib60870.Iec102Slave> 
             ?? throw new InvalidOperationException("Unable to create slave logger");
@@ -57,6 +61,26 @@ public class Iec102SlaveHostedService : IHostedService
     private void OnClientConnected(object? sender, string endpoint)
     {
         _logger.LogInformation("主站已连接: {Endpoint}", endpoint);
+        
+        // 异步初始化文件传输任务
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var initializer = scope.ServiceProvider.GetRequiredService<IFileTransferInitializer>();
+                
+                // 使用endpoint作为sessionId
+                var sessionId = endpoint;
+                var count = await initializer.InitializeTransfersForSessionAsync(sessionId, endpoint);
+                
+                _logger.LogInformation("为主站 {Endpoint} 初始化了 {Count} 个文件传输任务", endpoint, count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "初始化文件传输任务时发生异常: {Endpoint}", endpoint);
+            }
+        });
     }
     
     private void OnClientDisconnected(object? sender, string endpoint)

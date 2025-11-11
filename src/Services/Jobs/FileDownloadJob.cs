@@ -11,15 +11,18 @@ public class FileDownloadJob : IJob
 {
     private readonly ISftpManager _sftpManager;
     private readonly IReportTypeRepository _reportTypeRepository;
+    private readonly IFileRecordRepository _fileRecordRepository;
     private readonly ILogger<FileDownloadJob> _logger;
 
     public FileDownloadJob(
         ISftpManager sftpManager,
         IReportTypeRepository reportTypeRepository,
+        IFileRecordRepository fileRecordRepository,
         ILogger<FileDownloadJob> logger)
     {
         _sftpManager = sftpManager;
         _reportTypeRepository = reportTypeRepository;
+        _fileRecordRepository = fileRecordRepository;
         _logger = logger;
     }
 
@@ -69,6 +72,39 @@ public class FileDownloadJob : IJob
                 if (success)
                 {
                     _logger.LogInformation("文件下载成功: {RemoteFile}", remoteFile);
+                    
+                    // 保存文件记录到数据库
+                    try
+                    {
+                        var fileInfo = new FileInfo(localPath);
+                        var fileRecord = new FileRecord
+                        {
+                            ReportTypeId = reportTypeId,
+                            SftpConfigId = sftpConfigId,
+                            OriginalFilename = fileName,
+                            StoragePath = localPath,
+                            FileSize = fileInfo.Exists ? fileInfo.Length : 0,
+                            DownloadTime = DateTime.UtcNow,
+                            Status = "downloaded",
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        
+                        var fileRecordId = await _fileRecordRepository.CreateAsync(fileRecord);
+                        if (fileRecordId > 0)
+                        {
+                            _logger.LogInformation("文件记录已保存: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                fileRecordId, fileName);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("保存文件记录失败: FileName={FileName}", fileName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "保存文件记录时发生异常: FileName={FileName}", fileName);
+                    }
                 }
                 else
                 {
