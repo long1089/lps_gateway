@@ -6,7 +6,7 @@ LPS Gateway is an IEC-102 extended E-file reception, parsing, storage, and repor
 
 ## Technology Stack
 
-- **Framework**: .NET 8 WebAPI (upgraded from .NET 6)
+- **Framework**: .NET 8 MVC (upgraded from .NET 6)
 - **Database**: OpenGauss/PostgreSQL with SqlSugarCore ORM (v5.1.4.207)
 - **Protocol**: IEC-102 protocol for industrial communication
 - **Scheduling**: Quartz.NET (v3.13.1) for job scheduling
@@ -21,7 +21,7 @@ The project follows a layered architecture:
 
 ```
 src/
-├── Controllers/        # WebAPI and MVC endpoints
+├── Controllers/        # MVC endpoints
 ├── Data/              # Repository pattern with SqlSugarCore
 │   ├── Models/        # Entity models
 │   └── Repositories/  # Data access implementations
@@ -122,13 +122,9 @@ dotnet build
 
 ### Running the Application
 ```bash
-# Run the WebAPI
+# Run the Web MVC
 cd src
 dotnet run
-
-# Access Swagger UI
-# http://localhost:5000/swagger
-```
 
 ### Running Tests
 ```bash
