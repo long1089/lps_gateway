@@ -74,6 +74,16 @@ builder.Services.AddScoped<LpsGateway.Services.Jobs.FileDownloadJob>();
 // Register M2 hosted service
 builder.Services.AddHostedService<LpsGateway.HostedServices.ScheduleManagerHostedService>();
 
+// Configure M3: IEC-102 Master/Slave options
+builder.Services.Configure<LpsGateway.HostedServices.Iec102SlaveOptions>(
+    builder.Configuration.GetSection("Iec102Slave"));
+builder.Services.Configure<LpsGateway.HostedServices.Iec102MasterOptions>(
+    builder.Configuration.GetSection("Iec102Master"));
+
+// Register M3 hosted services
+builder.Services.AddHostedService<LpsGateway.HostedServices.Iec102SlaveHostedService>();
+builder.Services.AddHostedService<LpsGateway.HostedServices.Iec102MasterHostedService>();
+
 // Register existing application services
 builder.Services.AddScoped<IEFileRepository, EFileRepository>();
 builder.Services.AddScoped<IEFileParser, EFileParser>();
