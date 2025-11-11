@@ -46,6 +46,31 @@ public class Iec102Slave : IDisposable
     /// </summary>
     public event EventHandler<string>? ClientDisconnected;
     
+    /// <summary>
+    /// 文件对账事件（主站确认接收）
+    /// </summary>
+    public event EventHandler<FileReconciliationEventArgs>? FileReconciliation;
+    
+    /// <summary>
+    /// 文件重传请求事件
+    /// </summary>
+    public event EventHandler<FileRetransmitEventArgs>? FileRetransmitRequest;
+    
+    /// <summary>
+    /// 文件过长确认事件（来自主站）
+    /// </summary>
+    public event EventHandler<FileErrorEventArgs>? FileTooLongAck;
+    
+    /// <summary>
+    /// 文件名格式错误确认事件（来自主站）
+    /// </summary>
+    public event EventHandler<FileErrorEventArgs>? InvalidFileNameAck;
+    
+    /// <summary>
+    /// 单帧报文过长确认事件（来自主站）
+    /// </summary>
+    public event EventHandler<FileErrorEventArgs>? FrameTooLongAck;
+    
     public Iec102Slave(int port, ushort stationAddress, ILogger<Iec102Slave> logger)
     {
         _port = port;
@@ -412,6 +437,31 @@ public class Iec102Slave : IDisposable
             // 发送确认
             await SendFileCancelConfirmAsync(session, cancellationToken);
         }
+        // 处理文件对账（主站确认接收）
+        else if (typeId == 0x90 && cot == 0x0A)
+        {
+            await HandleFileReconciliationAsync(session, frame.UserData, cancellationToken);
+        }
+        // 处理文件重传请求
+        else if (typeId == 0x91 && cot == 0x0D)
+        {
+            await HandleFileRetransmitAsync(session, frame.UserData, cancellationToken);
+        }
+        // 处理文件过长确认（主站）
+        else if (typeId == 0x92 && cot == 0x0F)
+        {
+            await HandleFileTooLongFromMasterAsync(session, cancellationToken);
+        }
+        // 处理文件名格式错误确认（主站）
+        else if (typeId == 0x93 && cot == 0x11)
+        {
+            await HandleInvalidFileNameFromMasterAsync(session, cancellationToken);
+        }
+        // 处理单帧报文过长确认（主站）
+        else if (typeId == 0x94 && cot == 0x13)
+        {
+            await HandleFrameTooLongFromMasterAsync(session, cancellationToken);
+        }
         else
         {
             // 发送肯定确认
@@ -556,6 +606,132 @@ public class Iec102Slave : IDisposable
     }
     
     /// <summary>
+    /// 处理文件对账（主站确认接收）
+    /// </summary>
+    private async Task HandleFileReconciliationAsync(ClientSession session, byte[] userData, CancellationToken cancellationToken)
+    {
+        if (userData.Length < 10) // TYP(1) + VSQ(1) + COT(1) + CAddr(2) + RAddr(1) + FileLength(4)
+        {
+            _logger.LogWarning("文件对账数据长度不足");
+            return;
+        }
+        
+        // 提取文件长度（小端序）
+        int fileLength = userData[6] | (userData[7] << 8) | (userData[8] << 16) | (userData[9] << 24);
+        
+        _logger.LogInformation("收到文件对账: FileLength={FileLength}", fileLength);
+        
+        // 触发事件
+        FileReconciliation?.Invoke(this, new FileReconciliationEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            FileLength = fileLength 
+        });
+        
+        // 发送确认（子站确认长度一致）
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
+        
+        var asdu = new List<byte>
+        {
+            0x90, // TypeId: Reconciliation
+            0x01, // VSQ
+            0x0B, // COT: 子站确认主站接收长度一致
+            (byte)(_stationAddress & 0xFF),
+            (byte)((_stationAddress >> 8) & 0xFF),
+            0x00  // RecordAddr
+        };
+        
+        var frame = Iec102Frame.BuildVariableFrame(control, _stationAddress, asdu.ToArray());
+        
+        await SendFrameAsync(session, frame, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 处理文件重传请求
+    /// </summary>
+    private async Task HandleFileRetransmitAsync(ClientSession session, byte[] userData, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("收到文件重传请求");
+        
+        // 触发事件
+        FileRetransmitRequest?.Invoke(this, new FileRetransmitEventArgs 
+        { 
+            Endpoint = session.Endpoint 
+        });
+        
+        // 发送确认（子站确认重传）
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
+        
+        var asdu = new List<byte>
+        {
+            0x91, // TypeId: Retransmit
+            0x01, // VSQ
+            0x0E, // COT: 子站确认文件重传
+            (byte)(_stationAddress & 0xFF),
+            (byte)((_stationAddress >> 8) & 0xFF),
+            0x00  // RecordAddr
+        };
+        
+        var frame = Iec102Frame.BuildVariableFrame(control, _stationAddress, asdu.ToArray());
+        
+        await SendFrameAsync(session, frame, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 处理文件过长确认（来自主站）
+    /// </summary>
+    private async Task HandleFileTooLongFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("收到主站文件过长确认");
+        
+        // 触发事件
+        FileTooLongAck?.Invoke(this, new FileErrorEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            ErrorType = "FileTooLong" 
+        });
+        
+        // 发送确认
+        await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 处理文件名格式错误确认（来自主站）
+    /// </summary>
+    private async Task HandleInvalidFileNameFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("收到主站文件名格式错误确认");
+        
+        // 触发事件
+        InvalidFileNameAck?.Invoke(this, new FileErrorEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            ErrorType = "InvalidFileName" 
+        });
+        
+        // 发送确认
+        await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 处理单帧报文过长确认（来自主站）
+    /// </summary>
+    private async Task HandleFrameTooLongFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("收到主站单帧报文过长确认");
+        
+        // 触发事件
+        FrameTooLongAck?.Invoke(this, new FileErrorEventArgs 
+        { 
+            Endpoint = session.Endpoint, 
+            ErrorType = "FrameTooLong" 
+        });
+        
+        // 发送确认
+        await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
     /// 排队1级数据
     /// </summary>
     public void QueueClass1Data(byte typeId, byte cot, byte[] data)
@@ -649,3 +825,30 @@ public class FrameReceivedEventArgs : EventArgs
     public string Endpoint { get; set; } = string.Empty;
     public Iec102Frame Frame { get; set; } = null!;
 }
+
+/// <summary>
+/// 文件对账事件参数
+/// </summary>
+public class FileReconciliationEventArgs : EventArgs
+{
+    public string Endpoint { get; set; } = string.Empty;
+    public int FileLength { get; set; }
+}
+
+/// <summary>
+/// 文件重传事件参数
+/// </summary>
+public class FileRetransmitEventArgs : EventArgs
+{
+    public string Endpoint { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 文件错误事件参数
+/// </summary>
+public class FileErrorEventArgs : EventArgs
+{
+    public string Endpoint { get; set; } = string.Empty;
+    public string ErrorType { get; set; } = string.Empty;
+}
+
