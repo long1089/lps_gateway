@@ -22,10 +22,6 @@ public class Iec102Slave : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptTask;
     
-    // 数据队列：1级和2级
-    private readonly ConcurrentQueue<QueuedFrame> _class1Queue = new();
-    private readonly ConcurrentQueue<QueuedFrame> _class2Queue = new();
-    
     /// <summary>
     /// 是否正在运行
     /// </summary>
@@ -354,8 +350,8 @@ public class Iec102Slave : IDisposable
     {
         _logger.LogInformation("处理链路状态请求: {Endpoint}", session.Endpoint);
         
-        // 检查是否有1级数据待发送
-        var hasClass1Data = !_class1Queue.IsEmpty;
+        // 检查该会话是否有1级数据待发送
+        var hasClass1Data = session.HasClass1Data();
         
         // 发送链路状态响应
         var control = ControlField.CreateSlaveFrame(FunctionCodes.LinkStatusOrAccessDemand, hasClass1Data, false);
@@ -371,14 +367,18 @@ public class Iec102Slave : IDisposable
     {
         _logger.LogInformation("处理1级数据请求: {Endpoint}", session.Endpoint);
         
-        if (_class1Queue.TryDequeue(out var queuedFrame))
+        // 从会话的1级队列中取数据
+        if (session.TryDequeueClass1Data(out var queuedFrame))
         {
-            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, cancellationToken);
+            // 检查是否还有更多1级数据（设置ACD标志）
+            bool hasMoreClass1Data = session.HasClass1Data();
+            
+            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasMoreClass1Data, cancellationToken);
         }
         else
         {
-            // 无数据
-            await SendNoDataAsync(session, cancellationToken);
+            // 无数据，ACD=0
+            await SendNoDataAsync(session, false, cancellationToken);
         }
     }
     
@@ -389,14 +389,19 @@ public class Iec102Slave : IDisposable
     {
         _logger.LogInformation("处理2级数据请求: {Endpoint}", session.Endpoint);
         
-        if (_class2Queue.TryDequeue(out var queuedFrame))
+        // 从会话的2级队列中取数据
+        if (session.TryDequeueClass2Data(out var queuedFrame))
         {
-            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, cancellationToken);
+            // 检查是否有1级数据需要传输（设置ACD标志）
+            bool hasClass1Data = session.HasClass1Data();
+            
+            await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasClass1Data, cancellationToken);
         }
         else
         {
-            // 无数据
-            await SendNoDataAsync(session, cancellationToken);
+            // 无2级数据，检查是否有1级数据（设置ACD标志）
+            bool hasClass1Data = session.HasClass1Data();
+            await SendNoDataAsync(session, hasClass1Data, cancellationToken);
         }
     }
     
@@ -484,9 +489,9 @@ public class Iec102Slave : IDisposable
     /// <summary>
     /// 发送无数据响应
     /// </summary>
-    private async Task SendNoDataAsync(ClientSession session, CancellationToken cancellationToken)
+    private async Task SendNoDataAsync(ClientSession session, bool acd, CancellationToken cancellationToken)
     {
-        var control = ControlField.CreateSlaveFrame(FunctionCodes.NoDataAvailable);
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.NoDataAvailable, acd, false);
         var frame = Iec102Frame.BuildFixedFrame(control, _stationAddress);
         
         await SendFrameAsync(session, frame, cancellationToken);
@@ -499,11 +504,12 @@ public class Iec102Slave : IDisposable
         ClientSession session, 
         byte typeId, 
         byte cot, 
-        byte[] data, 
+        byte[] data,
+        bool acd,
         CancellationToken cancellationToken)
     {
-        var hasMore = !_class1Queue.IsEmpty || !_class2Queue.IsEmpty;
-        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData, hasMore, false);
+        // ACD标志表示是否有1级数据需要传输
+        var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData, acd, false);
         
         var asdu = new List<byte>
         {
@@ -732,21 +738,65 @@ public class Iec102Slave : IDisposable
     }
     
     /// <summary>
-    /// 排队1级数据
+    /// 排队1级数据到指定会话
     /// </summary>
-    public void QueueClass1Data(byte typeId, byte cot, byte[] data)
+    public void QueueClass1DataToSession(string endpoint, byte typeId, byte cot, byte[] data)
     {
-        _class1Queue.Enqueue(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
-        _logger.LogDebug("排队1级数据: TypeId=0x{TypeId:X2}", typeId);
+        if (_sessions.TryGetValue(endpoint, out var session))
+        {
+            session.QueueClass1Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        else
+        {
+            _logger.LogWarning("会话不存在，无法排队1级数据: {Endpoint}", endpoint);
+        }
     }
     
     /// <summary>
-    /// 排队2级数据
+    /// 排队2级数据到指定会话
     /// </summary>
-    public void QueueClass2Data(byte typeId, byte cot, byte[] data)
+    public void QueueClass2DataToSession(string endpoint, byte typeId, byte cot, byte[] data)
     {
-        _class2Queue.Enqueue(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
-        _logger.LogDebug("排队2级数据: TypeId=0x{TypeId:X2}", typeId);
+        if (_sessions.TryGetValue(endpoint, out var session))
+        {
+            session.QueueClass2Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        else
+        {
+            _logger.LogWarning("会话不存在，无法排队2级数据: {Endpoint}", endpoint);
+        }
+    }
+    
+    /// <summary>
+    /// 排队1级数据到所有会话（广播）
+    /// </summary>
+    public void QueueClass1DataToAll(byte typeId, byte cot, byte[] data)
+    {
+        foreach (var session in _sessions.Values)
+        {
+            session.QueueClass1Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        _logger.LogDebug("广播1级数据到所有会话: TypeId=0x{TypeId:X2}, 会话数={Count}", typeId, _sessions.Count);
+    }
+    
+    /// <summary>
+    /// 排队2级数据到所有会话（广播）
+    /// </summary>
+    public void QueueClass2DataToAll(byte typeId, byte cot, byte[] data)
+    {
+        foreach (var session in _sessions.Values)
+        {
+            session.QueueClass2Data(new QueuedFrame { TypeId = typeId, Cot = cot, Data = data });
+        }
+        _logger.LogDebug("广播2级数据到所有会话: TypeId=0x{TypeId:X2}, 会话数={Count}", typeId, _sessions.Count);
+    }
+    
+    /// <summary>
+    /// 获取所有活动会话的端点列表
+    /// </summary>
+    public IEnumerable<string> GetActiveSessionEndpoints()
+    {
+        return _sessions.Keys.ToList();
     }
     
     public void Dispose()
@@ -766,12 +816,19 @@ public class Iec102Slave : IDisposable
 /// <summary>
 /// 客户端会话
 /// </summary>
+/// <remarks>
+/// 每个会话维护独立的数据队列和FCB状态，支持多客户端并发
+/// </remarks>
 internal class ClientSession : IDisposable
 {
     public TcpClient Client { get; }
     public NetworkStream Stream { get; }
     public string Endpoint { get; }
     public SemaphoreSlim SendLock { get; } = new(1, 1);
+    
+    // 会话级数据队列
+    private readonly ConcurrentQueue<QueuedFrame> _class1Queue = new();
+    private readonly ConcurrentQueue<QueuedFrame> _class2Queue = new();
     
     private bool _expectedFcb;
     private readonly ILogger _logger;
@@ -797,6 +854,50 @@ internal class ClientSession : IDisposable
     {
         _expectedFcb = false;
         _logger.LogDebug("FCB 状态复位: {Endpoint}", Endpoint);
+    }
+    
+    /// <summary>
+    /// 排队1级数据
+    /// </summary>
+    public void QueueClass1Data(QueuedFrame frame)
+    {
+        _class1Queue.Enqueue(frame);
+        _logger.LogDebug("会话 {Endpoint} 排队1级数据: TypeId=0x{TypeId:X2}", Endpoint, frame.TypeId);
+    }
+    
+    /// <summary>
+    /// 排队2级数据
+    /// </summary>
+    public void QueueClass2Data(QueuedFrame frame)
+    {
+        _class2Queue.Enqueue(frame);
+        _logger.LogDebug("会话 {Endpoint} 排队2级数据: TypeId=0x{TypeId:X2}", Endpoint, frame.TypeId);
+    }
+    
+    /// <summary>
+    /// 检查是否有1级数据
+    /// </summary>
+    public bool HasClass1Data() => !_class1Queue.IsEmpty;
+    
+    /// <summary>
+    /// 检查是否有2级数据
+    /// </summary>
+    public bool HasClass2Data() => !_class2Queue.IsEmpty;
+    
+    /// <summary>
+    /// 尝试取出1级数据
+    /// </summary>
+    public bool TryDequeueClass1Data(out QueuedFrame? frame)
+    {
+        return _class1Queue.TryDequeue(out frame);
+    }
+    
+    /// <summary>
+    /// 尝试取出2级数据
+    /// </summary>
+    public bool TryDequeueClass2Data(out QueuedFrame? frame)
+    {
+        return _class2Queue.TryDequeue(out frame);
     }
     
     public void Dispose()
