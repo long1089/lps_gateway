@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using LpsGateway.Services;
 
 namespace LpsGateway.HostedServices;
 
@@ -10,15 +11,18 @@ namespace LpsGateway.HostedServices;
 public class Iec102SlaveHostedService : IHostedService
 {
     private readonly Lib60870.Iec102Slave _slave;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<Iec102SlaveHostedService> _logger;
     private readonly Iec102SlaveOptions _options;
     
     public Iec102SlaveHostedService(
         ILogger<Iec102SlaveHostedService> logger,
-        IOptions<Iec102SlaveOptions> options)
+        IOptions<Iec102SlaveOptions> options,
+        IServiceProvider serviceProvider)
     {
         _logger = logger;
         _options = options.Value;
+        _serviceProvider = serviceProvider;
         
         var slaveLogger = logger as ILogger<Lib60870.Iec102Slave> 
             ?? throw new InvalidOperationException("Unable to create slave logger");
@@ -27,6 +31,9 @@ public class Iec102SlaveHostedService : IHostedService
             _options.Port,
             _options.StationAddress,
             slaveLogger);
+        
+        // 设置服务提供者工厂，用于文件传输初始化
+        _slave.SetServiceProviderFactory(() => _serviceProvider);
         
         // 订阅事件
         _slave.ClientConnected += OnClientConnected;
@@ -57,6 +64,7 @@ public class Iec102SlaveHostedService : IHostedService
     private void OnClientConnected(object? sender, string endpoint)
     {
         _logger.LogInformation("主站已连接: {Endpoint}", endpoint);
+        // 不再在连接时自动初始化，而是在收到2级数据请求时处理
     }
     
     private void OnClientDisconnected(object? sender, string endpoint)

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
+using LpsGateway.Data.Models;
 
 namespace LpsGateway.Lib60870;
 
@@ -21,6 +22,13 @@ public class Iec102Slave : IIec102Slave, IDisposable
     private readonly ConcurrentDictionary<string, ClientSession> _sessions = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptTask;
+    private Task? _timeoutMonitorTask;
+    
+    // 文件传输超时设置（默认300秒）
+    private readonly TimeSpan _fileTransferTimeout = TimeSpan.FromSeconds(300);
+    
+    // 依赖注入用于文件传输初始化（可选）
+    private Func<IServiceProvider>? _serviceProviderFactory;
     
     /// <summary>
     /// 是否正在运行
@@ -75,6 +83,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
     }
     
     /// <summary>
+    /// 设置服务提供者工厂（用于文件传输初始化）
+    /// </summary>
+    public void SetServiceProviderFactory(Func<IServiceProvider> factory)
+    {
+        _serviceProviderFactory = factory;
+    }
+    
+    /// <summary>
     /// 启动从站服务器
     /// </summary>
     public Task StartAsync(CancellationToken cancellationToken = default)
@@ -93,6 +109,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
         IsRunning = true;
         
         _acceptTask = Task.Run(() => AcceptClientsAsync(_cts.Token), cancellationToken);
+        _timeoutMonitorTask = Task.Run(() => MonitorFileTransferTimeoutsAsync(_cts.Token), cancellationToken);
         
         _logger.LogInformation("从站服务器已启动");
         
@@ -165,6 +182,60 @@ public class Iec102Slave : IIec102Slave, IDisposable
                 _logger.LogError(ex, "接受客户端连接时发生错误");
             }
         }
+    }
+    
+    /// <summary>
+    /// 监控文件传输超时
+    /// </summary>
+    private async Task MonitorFileTransferTimeoutsAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("启动文件传输超时监控: 超时时长={TimeoutSeconds}秒", _fileTransferTimeout.TotalSeconds);
+        
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken); // 每10秒检查一次
+                
+                var now = DateTime.UtcNow;
+                
+                foreach (var kvp in _sessions.ToArray())
+                {
+                    var endpoint = kvp.Key;
+                    var session = kvp.Value;
+                    
+                    // 检查文件传输任务是否超时
+                    if (session.IsFileTransferTimedOut(_fileTransferTimeout, now))
+                    {
+                        _logger.LogWarning("文件传输超时（{TimeoutSeconds}秒）: {Endpoint}，断开连接", 
+                            _fileTransferTimeout.TotalSeconds, endpoint);
+                        
+                        // 断开链路
+                        try
+                        {
+                            session.Dispose();
+                            _sessions.TryRemove(endpoint, out _);
+                            
+                            ClientDisconnected?.Invoke(this, endpoint);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "断开超时会话 {Endpoint} 时发生错误", endpoint);
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 预期的取消
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "监控文件传输超时时发生错误");
+            }
+        }
+        
+        _logger.LogInformation("文件传输超时监控已停止");
     }
     
     /// <summary>
@@ -367,19 +438,104 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("处理1级数据请求: {Endpoint}", session.Endpoint);
         
-        // 从会话的1级队列中取数据
+        // 从会话的1级队列中取数据（优先发送已分段的数据）
         if (session.TryDequeueClass1Data(out var queuedFrame) && queuedFrame != null)
         {
             // 检查是否还有更多1级数据（设置ACD标志）
             bool hasMoreClass1Data = session.HasClass1Data();
             
+            // 更新文件传输活动时间
+            session.UpdateFileTransferActivity();
+            
             await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasMoreClass1Data, cancellationToken);
+            return;
         }
-        else
+        
+        // 无1级队列数据，检查当前是否有文件任务正在传输
+        if (session.HasCurrentFileTask())
         {
-            // 无数据，ACD=0
+            // 已有任务正在传输，等待传输完成后再获取新任务
+            _logger.LogDebug("会话 {Endpoint} 有文件任务正在传输，等待完成", session.Endpoint);
             await SendNoDataAsync(session, false, cancellationToken);
+            return;
         }
+        
+        // 无当前任务，尝试初始化新的1级文件传输
+        if (_serviceProviderFactory != null)
+        {
+            try
+            {
+                var serviceProvider = _serviceProviderFactory();
+                using var scope = serviceProvider.CreateScope();
+                var fileRecordRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IFileRecordRepository>();
+                var reportTypeRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IReportTypeRepository>();
+                
+                if (fileRecordRepo != null && reportTypeRepo != null)
+                {
+                    var reportTypes = await reportTypeRepo.GetAllAsync();
+                    var activeSessionIds = GetActiveSessionEndpoints();
+                    
+                    // 获取1级数据文件（Class1数据类型）
+                    foreach (var reportType in reportTypes.Where(rt => rt.Enabled && IsClass1DataType(rt.Code)))
+                    {
+                        var files = await fileRecordRepo.GetDownloadedFilesForTransferAsync(reportType.Id);
+                        
+                        foreach (var file in files)
+                        {
+                            var acquiredFile = await fileRecordRepo.TryAcquireFileForSessionAsync(
+                                file.Id, session.Endpoint, activeSessionIds);
+                            
+                            if (acquiredFile != null)
+                            {
+                                var fileTask = new FileTransferTaskInfo
+                                {
+                                    FileRecordId = acquiredFile.Id,
+                                    FileName = acquiredFile.OriginalFilename,
+                                    FilePath = acquiredFile.StoragePath,
+                                    FileSize = acquiredFile.FileSize,
+                                    ReportTypeId = acquiredFile.ReportTypeId,
+                                    IsClass1 = true
+                                };
+                                
+                                session.SetCurrentFileTask(fileTask);
+                                _logger.LogInformation("为会话设置1级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                    acquiredFile.Id, acquiredFile.OriginalFilename);
+                                
+                                // 发送文件分段
+                                bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
+                                
+                                if (sendSuccess)
+                                {
+                                    // 文件段已全部排队，立即取出第一段发送
+                                    if (session.TryDequeueClass1Data(out var firstFrame) && firstFrame != null)
+                                    {
+                                        bool hasMoreData = session.HasClass1Data();
+                                        
+                                        // 更新文件传输活动时间
+                                        session.UpdateFileTransferActivity();
+                                        
+                                        await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                                        return;
+                                    }
+                                }
+                                
+                                // 发送失败，清除任务
+                                session.ClearCurrentFileTask();
+                                await SendNoDataAsync(session, false, cancellationToken);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "初始化1级数据文件传输时发生异常");
+            }
+        }
+        
+        // 无数据，ACD=0
+        await SendNoDataAsync(session, false, cancellationToken);
     }
     
     /// <summary>
@@ -389,20 +545,304 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("处理2级数据请求: {Endpoint}", session.Endpoint);
         
-        // 从会话的2级队列中取数据
+        // 从会话的2级队列中取数据（优先发送已分段的数据）
         if (session.TryDequeueClass2Data(out var queuedFrame) && queuedFrame != null)
         {
             // 检查是否有1级数据需要传输（设置ACD标志）
             bool hasClass1Data = session.HasClass1Data();
             
+            // 更新文件传输活动时间
+            session.UpdateFileTransferActivity();
+            
             await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasClass1Data, cancellationToken);
+            return;
         }
-        else
+        
+        // 无2级队列数据，检查当前是否有文件任务正在传输
+        if (session.HasCurrentFileTask())
         {
-            // 无2级数据，检查是否有1级数据（设置ACD标志）
+            // 已有任务正在传输，等待传输完成后再获取新任务
+            _logger.LogDebug("会话 {Endpoint} 有文件任务正在传输，等待完成", session.Endpoint);
             bool hasClass1Data = session.HasClass1Data();
             await SendNoDataAsync(session, hasClass1Data, cancellationToken);
+            return;
         }
+        
+        // 无当前任务，尝试初始化文件传输
+        if (_serviceProviderFactory != null)
+        {
+            try
+            {
+                var serviceProvider = _serviceProviderFactory();
+                using var scope = serviceProvider.CreateScope();
+                var fileRecordRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IFileRecordRepository>();
+                var reportTypeRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IReportTypeRepository>();
+                
+                if (fileRecordRepo != null && reportTypeRepo != null)
+                {
+                    // 获取所有报表类型
+                    var reportTypes = await reportTypeRepo.GetAllAsync();
+                    var activeSessionIds = GetActiveSessionEndpoints();
+                    
+                    // 优先获取2级数据文件（非Class1数据类型）
+                    foreach (var reportType in reportTypes.Where(rt => rt.Enabled && !IsClass1DataType(rt.Code)))
+                    {
+                        var files = await fileRecordRepo.GetDownloadedFilesForTransferAsync(reportType.Id);
+                        
+                        foreach (var file in files)
+                        {
+                            // 尝试独占获取文件
+                            var acquiredFile = await fileRecordRepo.TryAcquireFileForSessionAsync(
+                                file.Id, session.Endpoint, activeSessionIds);
+                            
+                            if (acquiredFile != null)
+                            {
+                                // 成功独占，设置为当前任务
+                                var fileTask = new FileTransferTaskInfo
+                                {
+                                    FileRecordId = acquiredFile.Id,
+                                    FileName = acquiredFile.OriginalFilename,
+                                    FilePath = acquiredFile.StoragePath,
+                                    FileSize = acquiredFile.FileSize,
+                                    ReportTypeId = acquiredFile.ReportTypeId,
+                                    IsClass1 = false
+                                };
+                                
+                                session.SetCurrentFileTask(fileTask);
+                                _logger.LogInformation("为会话设置2级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                    acquiredFile.Id, acquiredFile.OriginalFilename);
+                                
+                                // 发送文件分段
+                                bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
+                                
+                                if (sendSuccess)
+                                {
+                                    // 文件段已全部排队，立即取出第一段发送
+                                    if (session.TryDequeueClass2Data(out var firstFrame) && firstFrame != null)
+                                    {
+                                        bool hasMoreData = session.HasClass1Data();
+                                        
+                                        // 更新文件传输活动时间
+                                        session.UpdateFileTransferActivity();
+                                        
+                                        await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                                        return;
+                                    }
+                                }
+                                
+                                // 发送失败，清除任务
+                                session.ClearCurrentFileTask();
+                                bool hasClass1DataFinal = session.HasClass1Data();
+                                await SendNoDataAsync(session, hasClass1DataFinal, cancellationToken);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "初始化2级数据文件传输时发生异常");
+            }
+        }
+        
+        // 无2级数据，检查是否有1级数据（设置ACD标志）
+        bool hasClass1DataFinal2 = session.HasClass1Data();
+        await SendNoDataAsync(session, hasClass1DataFinal2, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 判断报表类型代码是否为1级数据
+    /// </summary>
+    private bool IsClass1DataType(string reportTypeCode)
+    {
+        var class1Types = new HashSet<string>
+        {
+            "EFJ_FIVE_WIND_TOWER",      // 0x9A
+            "EFJ_DQ_RESULT_UP",          // 0x9B
+            "EFJ_CDQ_RESULT_UP",         // 0x9C
+            "EFJ_NWP_UP",                // 0x9D
+            "EGF_FIVE_GF_QXZ"            // 0xA1
+        };
+        return class1Types.Contains(reportTypeCode);
+    }
+    
+    /// <summary>
+    /// 发送文件分段数据
+    /// </summary>
+    private async Task<bool> SendFileSegmentsAsync(ClientSession session, FileTransferTaskInfo fileTask, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 验证文件存在
+            if (!File.Exists(fileTask.FilePath))
+            {
+                _logger.LogError("文件不存在: {FilePath}", fileTask.FilePath);
+                return false;
+            }
+            
+            // 获取服务提供者来查询ReportType
+            if (_serviceProviderFactory == null)
+            {
+                _logger.LogError("服务提供者未设置，无法获取报表类型信息");
+                return false;
+            }
+            
+            var serviceProvider = _serviceProviderFactory();
+            using var scope = serviceProvider.CreateScope();
+            var reportTypeRepo = scope.ServiceProvider.GetService<LpsGateway.Data.IReportTypeRepository>();
+            
+            if (reportTypeRepo == null)
+            {
+                _logger.LogError("无法获取报表类型仓储");
+                return false;
+            }
+            
+            var reportType = await reportTypeRepo.GetByIdAsync(fileTask.ReportTypeId);
+            if (reportType == null)
+            {
+                _logger.LogError("报表类型不存在: {ReportTypeId}", fileTask.ReportTypeId);
+                return false;
+            }
+            
+            // 获取TypeId
+            var typeId = DataClassification.GetTypeIdByReportType(reportType.Code);
+            if (!typeId.HasValue)
+            {
+                _logger.LogError("未知的报表类型代码: {Code}", reportType.Code);
+                return false;
+            }
+            
+            // 读取文件内容
+            // E文件统一采用GBK编码格式
+            byte[] fileContent;
+            try
+            {
+                // 注册GBK编码提供程序
+                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+                var gbk = System.Text.Encoding.GetEncoding("GBK");
+                
+                // 读取文本文件并转换为GBK字节
+                var fileText = await File.ReadAllTextAsync(fileTask.FilePath, gbk, cancellationToken);
+                fileContent = gbk.GetBytes(fileText);
+                
+                _logger.LogDebug("文件已读取为GBK编码: {FileName}, 原始大小={Size}字节", 
+                    fileTask.FileName, fileContent.Length);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "读取文件失败（GBK编码）: {FilePath}", fileTask.FilePath);
+                return false;
+            }
+            
+            // 验证文件大小
+            const int MaxFileSize = 20480; // 512 * 40
+            if (fileContent.Length > MaxFileSize)
+            {
+                _logger.LogError("文件过大: {Size} 字节 (最大 {MaxSize} 字节)", fileContent.Length, MaxFileSize);
+                return false;
+            }
+            
+            // 创建分段
+            var segments = CreateFileSegments(fileTask.FileName, fileContent);
+            
+            // 更新任务统计信息
+            fileTask.SentBytes = fileContent.Length;
+            fileTask.TotalSegments = segments.Count;
+            fileTask.SentSegments = segments.Count;
+            
+            // 设置为当前传输任务
+            session.SetCurrentFileTask(fileTask);
+            
+            _logger.LogInformation("开始发送文件: {FileName}, 大小={Size}字节, 段数={SegmentCount}", 
+                fileTask.FileName, fileContent.Length, segments.Count);
+            
+            // 发送每个分段
+            for (int i = 0; i < segments.Count; i++)
+            {
+                bool isLastSegment = (i == segments.Count - 1);
+                byte cot = isLastSegment 
+                    ? CauseOfTransmission.FileTransferComplete    // 0x07
+                    : CauseOfTransmission.FileTransferInProgress; // 0x09
+                
+                // 根据数据级别排队到不同队列
+                if (fileTask.IsClass1)
+                {
+                    session.QueueClass1Data(new QueuedFrame 
+                    { 
+                        TypeId = typeId.Value, 
+                        Cot = cot, 
+                        Data = segments[i] 
+                    });
+                }
+                else
+                {
+                    session.QueueClass2Data(new QueuedFrame 
+                    { 
+                        TypeId = typeId.Value, 
+                        Cot = cot, 
+                        Data = segments[i] 
+                    });
+                }
+                
+                _logger.LogDebug("已排队分段 {Index}/{Total} (COT=0x{Cot:X2})", 
+                    i + 1, segments.Count, cot);
+            }
+            
+            _logger.LogInformation("文件分段已全部排队: {FileName}, 共{Count}段", 
+                fileTask.FileName, segments.Count);
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "发送文件分段时发生异常: {FileName}", fileTask.FileName);
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// 创建文件分段
+    /// </summary>
+    private List<byte[]> CreateFileSegments(string filename, byte[] fileContent)
+    {
+        var segments = new List<byte[]>();
+        const int FileNameFieldSize = 64;
+        const int MaxSegmentSize = 512;
+        
+        // 编码文件名为GBK
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var gbk = System.Text.Encoding.GetEncoding("GBK");
+        byte[] filenameBytes = new byte[FileNameFieldSize];
+        byte[] encodedName = gbk.GetBytes(filename);
+        
+        if (encodedName.Length > FileNameFieldSize)
+        {
+            _logger.LogWarning("文件名GBK编码后超过{Size}字节，将截断: {Length}字节", 
+                FileNameFieldSize, encodedName.Length);
+            encodedName = encodedName.Take(FileNameFieldSize).ToArray();
+        }
+        
+        Array.Copy(encodedName, filenameBytes, Math.Min(encodedName.Length, FileNameFieldSize));
+        
+        // 分段文件内容
+        int offset = 0;
+        while (offset < fileContent.Length)
+        {
+            int segmentDataSize = Math.Min(MaxSegmentSize, fileContent.Length - offset);
+            byte[] segment = new byte[FileNameFieldSize + segmentDataSize];
+            
+            // 复制文件名字段
+            Array.Copy(filenameBytes, 0, segment, 0, FileNameFieldSize);
+            
+            // 复制数据字段
+            Array.Copy(fileContent, offset, segment, FileNameFieldSize, segmentDataSize);
+            
+            segments.Add(segment);
+            offset += segmentDataSize;
+        }
+        
+        return segments;
     }
     
     /// <summary>
@@ -622,26 +1062,65 @@ public class Iec102Slave : IIec102Slave, IDisposable
             return;
         }
         
-        // 提取文件长度（小端序）
-        int fileLength = userData[6] | (userData[7] << 8) | (userData[8] << 16) | (userData[9] << 24);
+        // 更新文件传输活动时间
+        session.UpdateFileTransferActivity();
         
-        _logger.LogInformation("收到文件对账: FileLength={FileLength}", fileLength);
+        // 提取文件长度（小端序）
+        int fileLengthFromMaster = userData[6] | (userData[7] << 8) | (userData[8] << 16) | (userData[9] << 24);
+        
+        _logger.LogInformation("收到文件对账: 主站接收长度={FileLength}", fileLengthFromMaster);
+        
+        // 获取当前传输的文件任务
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask == null)
+        {
+            _logger.LogWarning("未找到当前传输的文件任务");
+            return;
+        }
+        
+        // 比对发送/接收文件长度
+        bool lengthMatch = (currentTask.SentBytes == fileLengthFromMaster);
+        byte responseCot;
+        
+        if (lengthMatch)
+        {
+            // 长度一致，确认成功
+            responseCot = CauseOfTransmission.ReconciliationFromSlave; // 0x0B
+            _logger.LogInformation("文件长度一致: 发送={Sent}, 接收={Received}", 
+                currentTask.SentBytes, fileLengthFromMaster);
+            
+            // 更新FileRecord状态为已发送
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "sent", null, cancellationToken);
+            
+            // 清除当前任务
+            session.ClearCurrentFileTask();
+        }
+        else
+        {
+            // 长度不一致，准备重传（发送0x0C，等待主站发送0x0D）
+            responseCot = CauseOfTransmission.ReconciliationReconfirm; // 0x0C
+            _logger.LogWarning("文件长度不一致: 发送={Sent}, 接收={Received}, 准备重传（等待主站重传通知）", 
+                currentTask.SentBytes, fileLengthFromMaster);
+            
+            // 注意：不在此处重新初始化任务，等待主站发送0x0D通知重传后再处理
+            // 当前任务保留，等待HandleFileRetransmitAsync处理
+        }
         
         // 触发事件
         FileReconciliation?.Invoke(this, new FileReconciliationEventArgs 
         { 
             Endpoint = session.Endpoint, 
-            FileLength = fileLength 
+            FileLength = fileLengthFromMaster 
         });
         
-        // 发送确认（子站确认长度一致）
+        // 发送确认
         var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
         
         var asdu = new List<byte>
         {
             0x90, // TypeId: Reconciliation
             0x01, // VSQ
-            0x0B, // COT: 子站确认主站接收长度一致
+            responseCot, // COT: 0x0B（确认成功）或 0x0C（准备重传）
             (byte)(_stationAddress & 0xFF),
             (byte)((_stationAddress >> 8) & 0xFF),
             0x00  // RecordAddr
@@ -653,11 +1132,52 @@ public class Iec102Slave : IIec102Slave, IDisposable
     }
     
     /// <summary>
-    /// 处理文件重传请求
+    /// 处理文件重传请求（主站发送0x0D通知重传）
     /// </summary>
     private async Task HandleFileRetransmitAsync(ClientSession session, byte[] userData, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("收到文件重传请求");
+        _logger.LogInformation("收到文件重传请求（COT=0x0D）");
+        
+        // 更新文件传输活动时间
+        session.UpdateFileTransferActivity();
+        
+        // 获取当前文件任务并重新初始化
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            _logger.LogInformation("重新初始化文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                currentTask.FileRecordId, currentTask.FileName);
+            
+            // 重置任务状态（重新分段发送）
+            currentTask.SentBytes = 0;
+            currentTask.SentSegments = 0;
+            currentTask.LastActivityTime = DateTime.UtcNow; // 重置活动时间
+            
+            // 清空数据队列中的旧数据
+            if (currentTask.IsClass1)
+            {
+                // 清空1级队列
+                while (session.TryDequeueClass1Data(out _)) { }
+            }
+            else
+            {
+                // 清空2级队列
+                while (session.TryDequeueClass2Data(out _)) { }
+            }
+            
+            // 重新分段并排队
+            bool resendSuccess = await SendFileSegmentsAsync(session, currentTask, cancellationToken);
+            
+            if (!resendSuccess)
+            {
+                _logger.LogError("重新分段文件失败: FileRecordId={FileRecordId}", currentTask.FileRecordId);
+                session.ClearCurrentFileTask();
+            }
+        }
+        else
+        {
+            _logger.LogWarning("收到重传请求但未找到当前文件任务");
+        }
         
         // 触发事件
         FileRetransmitRequest?.Invoke(this, new FileRetransmitEventArgs 
@@ -665,14 +1185,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
             Endpoint = session.Endpoint 
         });
         
-        // 发送确认（子站确认重传）
+        // 发送确认（子站确认重传，COT=0x0E）
         var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
         
         var asdu = new List<byte>
         {
             0x91, // TypeId: Retransmit
             0x01, // VSQ
-            0x0E, // COT: 子站确认文件重传
+            CauseOfTransmission.RetransmitNotificationAck, // 0x0E: 子站确认文件重传
             (byte)(_stationAddress & 0xFF),
             (byte)((_stationAddress >> 8) & 0xFF),
             0x00  // RecordAddr
@@ -689,6 +1209,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
     private async Task HandleFileTooLongFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
     {
         _logger.LogInformation("收到主站文件过长确认");
+        
+        // 获取当前传输的文件任务并更新状态为错误
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "error", "文件过长（超过20480字节）", cancellationToken);
+            session.ClearCurrentFileTask();
+        }
         
         // 触发事件
         FileTooLongAck?.Invoke(this, new FileErrorEventArgs 
@@ -708,6 +1236,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("收到主站文件名格式错误确认");
         
+        // 获取当前传输的文件任务并更新状态为错误
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "error", "文件名格式错误", cancellationToken);
+            session.ClearCurrentFileTask();
+        }
+        
         // 触发事件
         InvalidFileNameAck?.Invoke(this, new FileErrorEventArgs 
         { 
@@ -726,6 +1262,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("收到主站单帧报文过长确认");
         
+        // 获取当前传输的文件任务并更新状态为错误
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "error", "单帧数据过长（超过512字节）", cancellationToken);
+            session.ClearCurrentFileTask();
+        }
+        
         // 触发事件
         FrameTooLongAck?.Invoke(this, new FileErrorEventArgs 
         { 
@@ -735,6 +1279,60 @@ public class Iec102Slave : IIec102Slave, IDisposable
         
         // 发送确认
         await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 获取FileRecord仓储实例
+    /// </summary>
+    private LpsGateway.Data.IFileRecordRepository? GetFileRecordRepository()
+    {
+        if (_serviceProviderFactory == null)
+        {
+            return null;
+        }
+        
+        var serviceProvider = _serviceProviderFactory();
+        var scope = serviceProvider.CreateScope();
+        return scope.ServiceProvider.GetService<LpsGateway.Data.IFileRecordRepository>();
+    }
+    
+    /// <summary>
+    /// 更新FileRecord状态
+    /// </summary>
+    private async Task UpdateFileRecordStatusAsync(int fileRecordId, string status, string? errorMessage, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var fileRecordRepo = GetFileRecordRepository();
+            if (fileRecordRepo == null)
+            {
+                _logger.LogWarning("无法获取FileRecord仓储，跳过状态更新");
+                return;
+            }
+            
+            var fileRecord = await fileRecordRepo.GetByIdAsync(fileRecordId);
+            if (fileRecord == null)
+            {
+                _logger.LogWarning("FileRecord不存在: {FileRecordId}", fileRecordId);
+                return;
+            }
+            
+            fileRecord.Status = status;
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                fileRecord.ErrorMessage = errorMessage;
+            }
+            fileRecord.UpdatedAt = DateTime.UtcNow;
+            
+            await fileRecordRepo.UpdateAsync(fileRecord);
+            
+            _logger.LogInformation("已更新FileRecord状态: FileRecordId={FileRecordId}, Status={Status}, Error={Error}", 
+                fileRecordId, status, errorMessage ?? "无");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新FileRecord状态失败: FileRecordId={FileRecordId}", fileRecordId);
+        }
     }
     
     /// <summary>
@@ -830,6 +1428,9 @@ internal class ClientSession : IDisposable
     private readonly ConcurrentQueue<QueuedFrame> _class1Queue = new();
     private readonly ConcurrentQueue<QueuedFrame> _class2Queue = new();
     
+    // 当前文件传输任务（单一任务模式，非队列）
+    private FileTransferTaskInfo? _currentFileTask;
+    
     private bool _expectedFcb;
     private readonly ILogger _logger;
     
@@ -900,6 +1501,71 @@ internal class ClientSession : IDisposable
         return _class2Queue.TryDequeue(out frame);
     }
     
+    /// <summary>
+    /// 设置当前文件传输任务（单一任务模式）
+    /// </summary>
+    public void SetCurrentFileTask(FileTransferTaskInfo? task)
+    {
+        _currentFileTask = task;
+        if (task != null)
+        {
+            _logger.LogDebug("会话 {Endpoint} 设置文件传输任务: FileRecordId={FileRecordId}", Endpoint, task.FileRecordId);
+        }
+    }
+    
+    /// <summary>
+    /// 获取当前文件传输任务
+    /// </summary>
+    public FileTransferTaskInfo? GetCurrentFileTask()
+    {
+        return _currentFileTask;
+    }
+    
+    /// <summary>
+    /// 检查是否有当前文件传输任务
+    /// </summary>
+    public bool HasCurrentFileTask() => _currentFileTask != null;
+    
+    /// <summary>
+    /// 清除当前文件任务
+    /// </summary>
+    public void ClearCurrentFileTask()
+    {
+        if (_currentFileTask != null)
+        {
+            _logger.LogDebug("会话 {Endpoint} 清除文件传输任务: FileRecordId={FileRecordId}", Endpoint, _currentFileTask.FileRecordId);
+        }
+        _currentFileTask = null;
+    }
+    
+    /// <summary>
+    /// 更新文件传输任务的最后活动时间
+    /// </summary>
+    public void UpdateFileTransferActivity()
+    {
+        if (_currentFileTask != null)
+        {
+            _currentFileTask.LastActivityTime = DateTime.UtcNow;
+        }
+    }
+    
+    /// <summary>
+    /// 检查文件传输是否超时
+    /// </summary>
+    /// <param name="timeout">超时时长</param>
+    /// <param name="currentTime">当前时间</param>
+    /// <returns>如果超时返回true</returns>
+    public bool IsFileTransferTimedOut(TimeSpan timeout, DateTime currentTime)
+    {
+        if (_currentFileTask == null)
+        {
+            return false;
+        }
+        
+        var elapsed = currentTime - _currentFileTask.LastActivityTime;
+        return elapsed > timeout;
+    }
+    
     public void Dispose()
     {
         SendLock.Dispose();
@@ -916,6 +1582,40 @@ internal class QueuedFrame
     public byte TypeId { get; set; }
     public byte Cot { get; set; }
     public byte[] Data { get; set; } = Array.Empty<byte>();
+}
+
+/// <summary>
+/// 文件传输任务信息（会话内存中）
+/// </summary>
+internal class FileTransferTaskInfo
+{
+    public int FileRecordId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+    public int ReportTypeId { get; set; }
+    public bool IsClass1 { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    /// <summary>
+    /// 已发送的字节数（用于对账比对）
+    /// </summary>
+    public int SentBytes { get; set; }
+    
+    /// <summary>
+    /// 总段数
+    /// </summary>
+    public int TotalSegments { get; set; }
+    
+    /// <summary>
+    /// 已发送段数
+    /// </summary>
+    public int SentSegments { get; set; }
+    
+    /// <summary>
+    /// 最后活动时间（用于超时检测）
+    /// </summary>
+    public DateTime LastActivityTime { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>

@@ -131,13 +131,20 @@ public class CauseOfTransmissionTests
 {
     [Theory]
     [InlineData(0x07, true)]  // FileTransferComplete
-    [InlineData(0x09, true)]  // FileTransferInProgress
+    [InlineData(0x08, true)]  // FileTransferInProgress (修正为0x08)
     [InlineData(0x0A, true)]  // ReconciliationFromMaster
-    [InlineData(0x10, true)]  // FileTransferError
-    [InlineData(0x11, true)]  // FileTransferErrorAck
-    [InlineData(0x12, true)]  // InvalidFileNameFormat
-    [InlineData(0x13, true)]  // FrameTooLong
+    [InlineData(0x0B, true)]  // ReconciliationFromSlave
+    [InlineData(0x0C, true)]  // ReconciliationReconfirm
+    [InlineData(0x0D, true)]  // RetransmitNotification
+    [InlineData(0x0E, true)]  // RetransmitNotificationAck
+    [InlineData(0x0F, true)]  // FileTooLongError
+    [InlineData(0x10, true)]  // FileTooLongAck
+    [InlineData(0x11, true)]  // InvalidFileNameFormat
+    [InlineData(0x12, true)]  // InvalidFileNameFormatAck
+    [InlineData(0x13, true)]  // FrameTooLongError
+    [InlineData(0x14, true)]  // FrameTooLongAck
     [InlineData(0x01, false)] // 非文件传输COT
+    [InlineData(0x09, false)] // 非文件传输COT（不再使用）
     [InlineData(0xFF, false)] // 非文件传输COT
     public void IsFileTransferCot_ShouldReturnCorrectResult(byte cot, bool expected)
     {
@@ -149,10 +156,13 @@ public class CauseOfTransmissionTests
     }
 
     [Theory]
-    [InlineData(0x07, "文件传输结束")]
-    [InlineData(0x09, "文件传输中")]
-    [InlineData(0x0A, "对账（主站）")]
-    [InlineData(0x10, "文件传输错误")]
+    [InlineData(0x07, "文件传输结束 (COT=0x07)")]
+    [InlineData(0x08, "文件未传输结束 (COT=0x08)")]
+    [InlineData(0x0A, "对账：主站确认接收 (COT=0x0A)")]
+    [InlineData(0x0B, "对账：子站确认文件传送成功 (COT=0x0B)")]
+    [InlineData(0x0F, "文件过长错误 (COT=0x0F)")]
+    [InlineData(0x11, "文件名格式错误 (COT=0x11)")]
+    [InlineData(0x13, "单帧数据过长 (COT=0x13)")]
     public void GetDescription_ShouldReturnCorrectDescription(byte cot, string expectedDescription)
     {
         // Act
@@ -165,14 +175,19 @@ public class CauseOfTransmissionTests
     [Fact]
     public void Constants_ShouldHaveCorrectValues()
     {
+        // 根据IEC-102协议规范验证COT值
         Assert.Equal(0x07, CauseOfTransmission.FileTransferComplete);
-        Assert.Equal(0x09, CauseOfTransmission.FileTransferInProgress);
+        Assert.Equal(0x08, CauseOfTransmission.FileTransferInProgress); // 修正为0x08
         Assert.Equal(0x0A, CauseOfTransmission.ReconciliationFromMaster);
         Assert.Equal(0x0B, CauseOfTransmission.ReconciliationFromSlave);
         Assert.Equal(0x0C, CauseOfTransmission.ReconciliationReconfirm);
-        Assert.Equal(0x10, CauseOfTransmission.FileTransferError);
-        Assert.Equal(0x11, CauseOfTransmission.FileTransferErrorAck);
-        Assert.Equal(0x12, CauseOfTransmission.InvalidFileNameFormat);
-        Assert.Equal(0x13, CauseOfTransmission.FrameTooLong);
+        Assert.Equal(0x0D, CauseOfTransmission.RetransmitNotification);
+        Assert.Equal(0x0E, CauseOfTransmission.RetransmitNotificationAck);
+        Assert.Equal(0x0F, CauseOfTransmission.FileTooLongError);
+        Assert.Equal(0x10, CauseOfTransmission.FileTooLongAck);
+        Assert.Equal(0x11, CauseOfTransmission.InvalidFileNameFormat);
+        Assert.Equal(0x12, CauseOfTransmission.InvalidFileNameFormatAck);
+        Assert.Equal(0x13, CauseOfTransmission.FrameTooLongError);
+        Assert.Equal(0x14, CauseOfTransmission.FrameTooLongAck);
     }
 }

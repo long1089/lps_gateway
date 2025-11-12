@@ -11,15 +11,18 @@ public class FileDownloadJob : IJob
 {
     private readonly ISftpManager _sftpManager;
     private readonly IReportTypeRepository _reportTypeRepository;
+    private readonly IFileRecordRepository _fileRecordRepository;
     private readonly ILogger<FileDownloadJob> _logger;
 
     public FileDownloadJob(
         ISftpManager sftpManager,
         IReportTypeRepository reportTypeRepository,
+        IFileRecordRepository fileRecordRepository,
         ILogger<FileDownloadJob> logger)
     {
         _sftpManager = sftpManager;
         _reportTypeRepository = reportTypeRepository;
+        _fileRecordRepository = fileRecordRepository;
         _logger = logger;
     }
 
@@ -62,6 +65,17 @@ public class FileDownloadJob : IJob
             foreach (var remoteFile in files)
             {
                 var fileName = Path.GetFileName(remoteFile);
+                
+                // 检查文件是否已下载（根据文件名和报表类型）
+                var existingRecord = await _fileRecordRepository.GetByStatusAndReportTypeAsync("downloaded", reportTypeId);
+                var alreadyDownloaded = existingRecord.Any(r => r.OriginalFilename == fileName);
+                
+                if (alreadyDownloaded)
+                {
+                    _logger.LogInformation("文件已下载，跳过: {FileName}", fileName);
+                    continue;
+                }
+                
                 var localPath = Path.Combine("downloads", reportType.Code, fileName);
                 
                 var success = await _sftpManager.DownloadFileAsync(sftpConfigId, remoteFile, localPath, context.CancellationToken);
@@ -69,6 +83,40 @@ public class FileDownloadJob : IJob
                 if (success)
                 {
                     _logger.LogInformation("文件下载成功: {RemoteFile}", remoteFile);
+                    
+                    // 保存文件记录到数据库
+                    try
+                    {
+                        var fileInfo = new FileInfo(localPath);
+                        var fileRecord = new FileRecord
+                        {
+                            ReportTypeId = reportTypeId,
+                            SftpConfigId = sftpConfigId,
+                            OriginalFilename = fileName,
+                            StoragePath = localPath,
+                            FileSize = fileInfo.Exists ? fileInfo.Length : 0,
+                            DownloadTime = DateTime.UtcNow,
+                            Status = "downloaded",
+                            ProcessSessionId = null, // 初始为空，等待会话处理
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        
+                        var fileRecordId = await _fileRecordRepository.CreateAsync(fileRecord);
+                        if (fileRecordId > 0)
+                        {
+                            _logger.LogInformation("文件记录已保存: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                fileRecordId, fileName);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("保存文件记录失败: FileName={FileName}", fileName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "保存文件记录时发生异常: FileName={FileName}", fileName);
+                    }
                 }
                 else
                 {
