@@ -48,6 +48,7 @@ builder.Services.AddScoped<IReportTypeRepository, ReportTypeRepository>();
 builder.Services.AddScoped<ISftpConfigRepository, SftpConfigRepository>();
 builder.Services.AddScoped<IScheduleRepository, ScheduleRepository>();
 builder.Services.AddScoped<IFileRecordRepository, FileRecordRepository>();
+builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 
 // Register M1 services
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -60,8 +61,14 @@ builder.Services.AddScoped<LpsGateway.Services.Jobs.FileDownloadJob>();
 // Register M4-additional services
 builder.Services.AddScoped<IFileTransferInitializer, FileTransferInitializer>();
 
+// Register M5 services
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+
 // Register M2 hosted service
 builder.Services.AddHostedService<LpsGateway.HostedServices.ScheduleManagerHostedService>();
+
+// Register M5 hosted service
+builder.Services.AddHostedService<LpsGateway.HostedServices.RetentionWorkerHostedService>();
 
 // Configure M3: IEC-102 Master/Slave options
 builder.Services.Configure<LpsGateway.HostedServices.Iec102SlaveOptions>(

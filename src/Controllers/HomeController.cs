@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using LpsGateway.Services;
 
 namespace LpsGateway.Controllers;
 
@@ -8,18 +9,31 @@ namespace LpsGateway.Controllers;
 public class HomeController : Controller
 {
     private readonly ILogger<HomeController> _logger;
+    private readonly IDashboardService _dashboardService;
 
-    public HomeController(ILogger<HomeController> logger)
+    public HomeController(
+        ILogger<HomeController> logger,
+        IDashboardService dashboardService)
     {
         _logger = logger;
+        _dashboardService = dashboardService;
     }
 
     /// <summary>
-    /// 首页
+    /// 首页 - 显示仪表盘
     /// </summary>
-    public IActionResult Index()
+    public async Task<IActionResult> Index()
     {
-        return View();
+        try
+        {
+            var dashboardData = await _dashboardService.GetDashboardDataAsync();
+            return View(dashboardData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "获取仪表盘数据失败");
+            return View(new Models.DashboardViewModel());
+        }
     }
 
     /// <summary>
