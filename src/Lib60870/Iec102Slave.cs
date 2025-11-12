@@ -715,6 +715,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
             // 创建分段
             var segments = CreateFileSegments(fileTask.FileName, fileContent);
             
+            // 更新任务统计信息
+            fileTask.SentBytes = fileContent.Length;
+            fileTask.TotalSegments = segments.Count;
+            fileTask.SentSegments = segments.Count;
+            
+            // 设置为当前传输任务
+            session.SetCurrentFileTask(fileTask);
+            
             _logger.LogInformation("开始发送文件: {FileName}, 大小={Size}字节, 段数={SegmentCount}", 
                 fileTask.FileName, fileContent.Length, segments.Count);
             
@@ -1024,25 +1032,84 @@ public class Iec102Slave : IIec102Slave, IDisposable
         }
         
         // 提取文件长度（小端序）
-        int fileLength = userData[6] | (userData[7] << 8) | (userData[8] << 16) | (userData[9] << 24);
+        int fileLengthFromMaster = userData[6] | (userData[7] << 8) | (userData[8] << 16) | (userData[9] << 24);
         
-        _logger.LogInformation("收到文件对账: FileLength={FileLength}", fileLength);
+        _logger.LogInformation("收到文件对账: 主站接收长度={FileLength}", fileLengthFromMaster);
+        
+        // 获取当前传输的文件任务
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask == null)
+        {
+            _logger.LogWarning("未找到当前传输的文件任务");
+            return;
+        }
+        
+        // 比对发送/接收文件长度
+        bool lengthMatch = (currentTask.SentBytes == fileLengthFromMaster);
+        byte responseCot;
+        
+        if (lengthMatch)
+        {
+            // 长度一致，确认成功
+            responseCot = CauseOfTransmission.ReconciliationFromSlave; // 0x0B
+            _logger.LogInformation("文件长度一致: 发送={Sent}, 接收={Received}", 
+                currentTask.SentBytes, fileLengthFromMaster);
+            
+            // 更新FileRecord状态为已发送
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "sent", null, cancellationToken);
+            
+            // 清除当前任务
+            session.ClearCurrentFileTask();
+        }
+        else
+        {
+            // 长度不一致，准备重传
+            responseCot = CauseOfTransmission.ReconciliationReconfirm; // 0x0C
+            _logger.LogWarning("文件长度不一致: 发送={Sent}, 接收={Received}, 准备重传", 
+                currentTask.SentBytes, fileLengthFromMaster);
+            
+            // 重新初始化文件传输任务（重传）
+            var fileRecordRepo = GetFileRecordRepository();
+            if (fileRecordRepo != null)
+            {
+                var fileRecord = await fileRecordRepo.GetByIdAsync(currentTask.FileRecordId);
+                if (fileRecord != null)
+                {
+                    // 创建新的传输任务（重传）
+                    var retransmitTask = new FileTransferTaskInfo
+                    {
+                        FileRecordId = fileRecord.Id,
+                        FileName = fileRecord.OriginalFilename,
+                        FilePath = fileRecord.StoragePath,
+                        FileSize = fileRecord.FileSize,
+                        ReportTypeId = fileRecord.ReportTypeId,
+                        IsClass1 = IsClass1DataType(fileRecord.ReportType?.Code ?? "")
+                    };
+                    
+                    session.AddFileTransferTask(retransmitTask);
+                    _logger.LogInformation("已添加重传任务: FileRecordId={FileRecordId}", fileRecord.Id);
+                }
+            }
+            
+            // 清除当前任务
+            session.ClearCurrentFileTask();
+        }
         
         // 触发事件
         FileReconciliation?.Invoke(this, new FileReconciliationEventArgs 
         { 
             Endpoint = session.Endpoint, 
-            FileLength = fileLength 
+            FileLength = fileLengthFromMaster 
         });
         
-        // 发送确认（子站确认长度一致）
+        // 发送确认
         var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
         
         var asdu = new List<byte>
         {
             0x90, // TypeId: Reconciliation
             0x01, // VSQ
-            0x0B, // COT: 子站确认主站接收长度一致
+            responseCot, // COT: 0x0B（确认成功）或 0x0C（准备重传）
             (byte)(_stationAddress & 0xFF),
             (byte)((_stationAddress >> 8) & 0xFF),
             0x00  // RecordAddr
@@ -1091,6 +1158,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("收到主站文件过长确认");
         
+        // 获取当前传输的文件任务并更新状态为错误
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "error", "文件过长（超过20480字节）", cancellationToken);
+            session.ClearCurrentFileTask();
+        }
+        
         // 触发事件
         FileTooLongAck?.Invoke(this, new FileErrorEventArgs 
         { 
@@ -1108,6 +1183,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
     private async Task HandleInvalidFileNameFromMasterAsync(ClientSession session, CancellationToken cancellationToken)
     {
         _logger.LogInformation("收到主站文件名格式错误确认");
+        
+        // 获取当前传输的文件任务并更新状态为错误
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "error", "文件名格式错误", cancellationToken);
+            session.ClearCurrentFileTask();
+        }
         
         // 触发事件
         InvalidFileNameAck?.Invoke(this, new FileErrorEventArgs 
@@ -1127,6 +1210,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("收到主站单帧报文过长确认");
         
+        // 获取当前传输的文件任务并更新状态为错误
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            await UpdateFileRecordStatusAsync(currentTask.FileRecordId, "error", "单帧数据过长（超过512字节）", cancellationToken);
+            session.ClearCurrentFileTask();
+        }
+        
         // 触发事件
         FrameTooLongAck?.Invoke(this, new FileErrorEventArgs 
         { 
@@ -1136,6 +1227,60 @@ public class Iec102Slave : IIec102Slave, IDisposable
         
         // 发送确认
         await SendAckAsync(session, true, cancellationToken);
+    }
+    
+    /// <summary>
+    /// 获取FileRecord仓储实例
+    /// </summary>
+    private LpsGateway.Data.IFileRecordRepository? GetFileRecordRepository()
+    {
+        if (_serviceProviderFactory == null)
+        {
+            return null;
+        }
+        
+        var serviceProvider = _serviceProviderFactory();
+        var scope = serviceProvider.CreateScope();
+        return scope.ServiceProvider.GetService<LpsGateway.Data.IFileRecordRepository>();
+    }
+    
+    /// <summary>
+    /// 更新FileRecord状态
+    /// </summary>
+    private async Task UpdateFileRecordStatusAsync(int fileRecordId, string status, string? errorMessage, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var fileRecordRepo = GetFileRecordRepository();
+            if (fileRecordRepo == null)
+            {
+                _logger.LogWarning("无法获取FileRecord仓储，跳过状态更新");
+                return;
+            }
+            
+            var fileRecord = await fileRecordRepo.GetByIdAsync(fileRecordId);
+            if (fileRecord == null)
+            {
+                _logger.LogWarning("FileRecord不存在: {FileRecordId}", fileRecordId);
+                return;
+            }
+            
+            fileRecord.Status = status;
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                fileRecord.ErrorMessage = errorMessage;
+            }
+            fileRecord.UpdatedAt = DateTime.UtcNow;
+            
+            await fileRecordRepo.UpdateAsync(fileRecord);
+            
+            _logger.LogInformation("已更新FileRecord状态: FileRecordId={FileRecordId}, Status={Status}, Error={Error}", 
+                fileRecordId, status, errorMessage ?? "无");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新FileRecord状态失败: FileRecordId={FileRecordId}", fileRecordId);
+        }
     }
     
     /// <summary>
@@ -1234,6 +1379,9 @@ internal class ClientSession : IDisposable
     // 会话级文件传输任务列表（内存中，不保存到数据库）
     private readonly ConcurrentQueue<FileTransferTaskInfo> _fileTransferTasks = new();
     
+    // 当前正在传输的文件任务（用于对账）
+    private FileTransferTaskInfo? _currentFileTask;
+    
     private bool _expectedFcb;
     private readonly ILogger _logger;
     
@@ -1326,6 +1474,30 @@ internal class ClientSession : IDisposable
         return _fileTransferTasks.TryDequeue(out task);
     }
     
+    /// <summary>
+    /// 设置当前正在传输的文件任务
+    /// </summary>
+    public void SetCurrentFileTask(FileTransferTaskInfo? task)
+    {
+        _currentFileTask = task;
+    }
+    
+    /// <summary>
+    /// 获取当前正在传输的文件任务
+    /// </summary>
+    public FileTransferTaskInfo? GetCurrentFileTask()
+    {
+        return _currentFileTask;
+    }
+    
+    /// <summary>
+    /// 清除当前文件任务
+    /// </summary>
+    public void ClearCurrentFileTask()
+    {
+        _currentFileTask = null;
+    }
+    
     public void Dispose()
     {
         SendLock.Dispose();
@@ -1356,6 +1528,21 @@ internal class FileTransferTaskInfo
     public int ReportTypeId { get; set; }
     public bool IsClass1 { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    /// <summary>
+    /// 已发送的字节数（用于对账比对）
+    /// </summary>
+    public int SentBytes { get; set; }
+    
+    /// <summary>
+    /// 总段数
+    /// </summary>
+    public int TotalSegments { get; set; }
+    
+    /// <summary>
+    /// 已发送段数
+    /// </summary>
+    public int SentSegments { get; set; }
 }
 
 /// <summary>
