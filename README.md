@@ -49,11 +49,14 @@ This project implements an IEC-102 extended E file reception, parsing, storage, 
 - Error control (0x91-0x94)
 - FileTransferTask worker with backpressure
 
-### 📋 M5: Retention & Observability  (Next)
-- Retention worker
-- Prometheus metrics & Grafana dashboards
-- Operation audit logging
-- Disk usage alerts
+### ✅ M5: Retention & Observability
+- **Dashboard**: System status overview, real-time metrics
+- **File Records**: Latest downloads and transfers display
+- **Error Alerts**: Disk usage, failed downloads/transfers monitoring
+- **Communication Status**: IEC-102 master/slave status tracking
+- **Retention Worker**: Automated expired file cleanup
+- **Audit Logs**: Admin panel for operation audit viewing
+- **Statistics**: Action counts and operation analytics
 
 ### 📋 M6: Integration & Testing
 - Master station integration testing

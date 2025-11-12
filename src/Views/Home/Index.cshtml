@@ -1,62 +1,391 @@
+@model LpsGateway.Models.DashboardViewModel
 @{
-    ViewData["Title"] = "首页";
+    ViewData["Title"] = "仪表盘";
 }
 
-<div class="text-center mt-5">
-    <h1 class="display-4">欢迎使用 LPS Gateway</h1>
-    <p class="lead">IEC-102 扩展 E 文件接收与管理系统</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-speedometer2"></i> 系统仪表盘</h1>
+    <button class="btn btn-outline-primary" onclick="location.reload()">
+        <i class="bi bi-arrow-clockwise"></i> 刷新
+    </button>
 </div>
 
-<div class="row mt-5">
-    <div class="col-md-4">
-        <div class="card">
+@* 错误告警 *@
+@if (Model.ErrorAlerts.Any())
+{
+    <div class="alert alert-dismissible fade show @(Model.ErrorAlerts.Any(a => a.Severity == "critical") ? "alert-danger" : "alert-warning")" role="alert">
+        <h5 class="alert-heading">
+            <i class="bi bi-exclamation-triangle-fill"></i> 系统告警
+        </h5>
+        <ul class="mb-0">
+            @foreach (var alert in Model.ErrorAlerts.Take(3))
+            {
+                <li>[@alert.Type] @alert.Message</li>
+            }
+        </ul>
+        @if (Model.ErrorAlerts.Count > 3)
+        {
+            <small>还有 @(Model.ErrorAlerts.Count - 3) 条告警...</small>
+        }
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@* 系统状态概览 *@
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
             <div class="card-body">
-                <h5 class="card-title">
-                    <i class="bi bi-file-earmark-text"></i> 报表类型管理
-                </h5>
-                <p class="card-text">配置和管理不同类型的报表定义</p>
-                @if (User.Identity?.IsAuthenticated == true)
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2">总下载文件</h6>
+                        <h2 class="card-title mb-0">@Model.SystemStatus.TotalDownloadedFiles</h2>
+                    </div>
+                    <div class="fs-1">
+                        <i class="bi bi-download"></i>
+                    </div>
+                </div>
+                <small>今日: @Model.SystemStatus.TodayDownloadedFiles</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2">传输任务</h6>
+                        <h2 class="card-title mb-0">@Model.SystemStatus.TotalTransferTasks</h2>
+                    </div>
+                    <div class="fs-1">
+                        <i class="bi bi-arrow-up-circle"></i>
+                    </div>
+                </div>
+                <small>进行中: @Model.SystemStatus.InProgressTasks</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2">待处理</h6>
+                        <h2 class="card-title mb-0">@Model.SystemStatus.PendingTasks</h2>
+                    </div>
+                    <div class="fs-1">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                </div>
+                <small>失败: @Model.SystemStatus.FailedTasks</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2">运行时间</h6>
+                        <h2 class="card-title mb-0">@TimeSpan.FromSeconds(Model.SystemStatus.UptimeSeconds).ToString(@"hh\:mm")</h2>
+                    </div>
+                    <div class="fs-1">
+                        <i class="bi bi-hourglass-split"></i>
+                    </div>
+                </div>
+                <small>小时:分钟</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 通讯状态与磁盘使用 *@
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-signal"></i> 通讯状态</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <p>
+                            <strong>IEC-102 从站：</strong>
+                            <span class="badge bg-@(Model.CommunicationStatus.SlaveIsRunning ? "success" : "danger")">
+                                @(Model.CommunicationStatus.SlaveIsRunning ? "运行中" : "已停止")
+                            </span>
+                        </p>
+                        <p>
+                            <strong>IEC-102 主站：</strong>
+                            <span class="badge bg-@(Model.CommunicationStatus.MasterIsRunning ? "success" : "danger")">
+                                @(Model.CommunicationStatus.MasterIsRunning ? "运行中" : "已停止")
+                            </span>
+                        </p>
+                    </div>
+                    <div class="col-6">
+                        <p><strong>活跃连接：</strong> @Model.CommunicationStatus.ActiveConnections</p>
+                        <p><strong>今日发送帧：</strong> @Model.CommunicationStatus.TodaySentFrames</p>
+                    </div>
+                </div>
+                @if (Model.CommunicationStatus.LastActivityTime.HasValue)
                 {
+                    <p class="text-muted small mb-0">
+                        最后活动: @Model.CommunicationStatus.LastActivityTime.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                    </p>
+                }
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-hdd"></i> 磁盘使用情况</h5>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3" style="height: 30px;">
+                    <div class="progress-bar @(Model.DiskUsage.IsCritical ? "bg-danger" : Model.DiskUsage.IsWarning ? "bg-warning" : "bg-success")" 
+                         role="progressbar" 
+                         style="width: @Model.DiskUsage.UsagePercent%"
+                         aria-valuenow="@Model.DiskUsage.UsagePercent" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">
+                        @Model.DiskUsage.UsagePercent.ToString("F1")%
+                    </div>
+                </div>
+                <div class="row text-center">
+                    <div class="col-4">
+                        <small class="text-muted">总空间</small>
+                        <p class="mb-0"><strong>@FormatBytes(Model.DiskUsage.TotalSpaceBytes)</strong></p>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted">已使用</small>
+                        <p class="mb-0"><strong>@FormatBytes(Model.DiskUsage.UsedSpaceBytes)</strong></p>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted">可用</small>
+                        <p class="mb-0"><strong>@FormatBytes(Model.DiskUsage.FreeSpaceBytes)</strong></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 最新文件下载记录 *@
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-cloud-download"></i> 最新文件下载记录</h5>
+            </div>
+            <div class="card-body">
+                @if (Model.RecentDownloads.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>文件名</th>
+                                    <th>报表类型</th>
+                                    <th>大小</th>
+                                    <th>状态</th>
+                                    <th>下载时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var record in Model.RecentDownloads)
+                                {
+                                    <tr>
+                                        <td>@record.FileName</td>
+                                        <td>@record.ReportTypeName</td>
+                                        <td>@FormatBytes(record.FileSizeBytes)</td>
+                                        <td>
+                                            <span class="badge bg-@GetStatusBadgeColor(record.Status)">
+                                                @GetStatusText(record.Status)
+                                            </span>
+                                        </td>
+                                        <td>@record.DownloadTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted text-center mb-0">暂无下载记录</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 最新文件传输记录 *@
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-arrow-up-circle"></i> 最新文件传输记录</h5>
+            </div>
+            <div class="card-body">
+                @if (Model.RecentTransfers.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>文件名</th>
+                                    <th>状态</th>
+                                    <th>进度</th>
+                                    <th>创建时间</th>
+                                    <th>完成时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var record in Model.RecentTransfers)
+                                {
+                                    <tr>
+                                        <td>@record.FileName</td>
+                                        <td>
+                                            <span class="badge bg-@GetStatusBadgeColor(record.Status)">
+                                                @GetStatusText(record.Status)
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @if (record.TotalSegments.HasValue && record.TotalSegments.Value > 0)
+                                            {
+                                                <div class="progress" style="height: 20px; width: 150px;">
+                                                    <div class="progress-bar" role="progressbar" 
+                                                         style="width: @record.Progress%" 
+                                                         aria-valuenow="@record.Progress" 
+                                                         aria-valuemin="0" 
+                                                         aria-valuemax="100">
+                                                        @record.Progress%
+                                                    </div>
+                                                </div>
+                                                <small>(@record.SentSegments/@record.TotalSegments 段)</small>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                        <td>@record.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                        <td>@(record.CompletedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "-")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted text-center mb-0">暂无传输记录</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 管理快捷入口 *@
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-file-earmark-text"></i> 报表类型管理
+                    </h5>
+                    <p class="card-text">配置和管理不同类型的报表定义</p>
                     <a asp-controller="ReportTypes" asp-action="Index" class="btn btn-primary">进入管理</a>
-                }
+                </div>
             </div>
         </div>
-    </div>
-    
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">
-                    <i class="bi bi-server"></i> SFTP 配置
-                </h5>
-                <p class="card-text">管理 SFTP 服务器连接配置</p>
-                @if (User.Identity?.IsAuthenticated == true)
-                {
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-server"></i> SFTP 配置
+                    </h5>
+                    <p class="card-text">管理 SFTP 服务器连接配置</p>
                     <a asp-controller="SftpConfigs" asp-action="Index" class="btn btn-primary">进入管理</a>
-                }
+                </div>
             </div>
         </div>
-    </div>
-    
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">
-                    <i class="bi bi-clock"></i> 调度配置
-                </h5>
-                <p class="card-text">设置自动下载的调度时间</p>
-                @if (User.Identity?.IsAuthenticated == true)
-                {
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-clock"></i> 调度配置
+                    </h5>
+                    <p class="card-text">设置自动下载的调度时间</p>
                     <a asp-controller="Schedules" asp-action="Index" class="btn btn-primary">进入管理</a>
-                }
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-@if (User.Identity?.IsAuthenticated != true)
+}
+else
 {
     <div class="text-center mt-5">
         <a asp-controller="Account" asp-action="Login" class="btn btn-lg btn-primary">立即登录</a>
     </div>
+}
+
+@functions {
+    private string FormatBytes(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len = len / 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    private string GetStatusBadgeColor(string status)
+    {
+        return status switch
+        {
+            "downloaded" => "success",
+            "sent" => "success",
+            "completed" => "success",
+            "processing" => "info",
+            "in_progress" => "info",
+            "pending" => "warning",
+            "error" => "danger",
+            "failed" => "danger",
+            "cancelled" => "secondary",
+            "expired" => "secondary",
+            _ => "secondary"
+        };
+    }
+
+    private string GetStatusText(string status)
+    {
+        return status switch
+        {
+            "downloaded" => "已下载",
+            "processing" => "处理中",
+            "sent" => "已发送",
+            "error" => "错误",
+            "expired" => "已过期",
+            "pending" => "待处理",
+            "in_progress" => "进行中",
+            "completed" => "已完成",
+            "failed" => "失败",
+            "cancelled" => "已取消",
+            _ => status
+        };
+    }
 }
