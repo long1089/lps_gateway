@@ -22,6 +22,10 @@ public class Iec102Slave : IIec102Slave, IDisposable
     private readonly ConcurrentDictionary<string, ClientSession> _sessions = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptTask;
+    private Task? _timeoutMonitorTask;
+    
+    // 文件传输超时设置（默认300秒）
+    private readonly TimeSpan _fileTransferTimeout = TimeSpan.FromSeconds(300);
     
     // 依赖注入用于文件传输初始化（可选）
     private Func<IServiceProvider>? _serviceProviderFactory;
@@ -105,6 +109,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
         IsRunning = true;
         
         _acceptTask = Task.Run(() => AcceptClientsAsync(_cts.Token), cancellationToken);
+        _timeoutMonitorTask = Task.Run(() => MonitorFileTransferTimeoutsAsync(_cts.Token), cancellationToken);
         
         _logger.LogInformation("从站服务器已启动");
         
@@ -177,6 +182,60 @@ public class Iec102Slave : IIec102Slave, IDisposable
                 _logger.LogError(ex, "接受客户端连接时发生错误");
             }
         }
+    }
+    
+    /// <summary>
+    /// 监控文件传输超时
+    /// </summary>
+    private async Task MonitorFileTransferTimeoutsAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("启动文件传输超时监控: 超时时长={TimeoutSeconds}秒", _fileTransferTimeout.TotalSeconds);
+        
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken); // 每10秒检查一次
+                
+                var now = DateTime.UtcNow;
+                
+                foreach (var kvp in _sessions.ToArray())
+                {
+                    var endpoint = kvp.Key;
+                    var session = kvp.Value;
+                    
+                    // 检查文件传输任务是否超时
+                    if (session.IsFileTransferTimedOut(_fileTransferTimeout, now))
+                    {
+                        _logger.LogWarning("文件传输超时（{TimeoutSeconds}秒）: {Endpoint}，断开连接", 
+                            _fileTransferTimeout.TotalSeconds, endpoint);
+                        
+                        // 断开链路
+                        try
+                        {
+                            session.Dispose();
+                            _sessions.TryRemove(endpoint, out _);
+                            
+                            ClientDisconnected?.Invoke(this, endpoint);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "断开超时会话 {Endpoint} 时发生错误", endpoint);
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 预期的取消
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "监控文件传输超时时发生错误");
+            }
+        }
+        
+        _logger.LogInformation("文件传输超时监控已停止");
     }
     
     /// <summary>
@@ -385,6 +444,9 @@ public class Iec102Slave : IIec102Slave, IDisposable
             // 检查是否还有更多1级数据（设置ACD标志）
             bool hasMoreClass1Data = session.HasClass1Data();
             
+            // 更新文件传输活动时间
+            session.UpdateFileTransferActivity();
+            
             await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasMoreClass1Data, cancellationToken);
             return;
         }
@@ -448,6 +510,10 @@ public class Iec102Slave : IIec102Slave, IDisposable
                                     if (session.TryDequeueClass1Data(out var firstFrame) && firstFrame != null)
                                     {
                                         bool hasMoreData = session.HasClass1Data();
+                                        
+                                        // 更新文件传输活动时间
+                                        session.UpdateFileTransferActivity();
+                                        
                                         await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
                                         return;
                                     }
@@ -484,6 +550,9 @@ public class Iec102Slave : IIec102Slave, IDisposable
         {
             // 检查是否有1级数据需要传输（设置ACD标志）
             bool hasClass1Data = session.HasClass1Data();
+            
+            // 更新文件传输活动时间
+            session.UpdateFileTransferActivity();
             
             await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasClass1Data, cancellationToken);
             return;
@@ -552,6 +621,10 @@ public class Iec102Slave : IIec102Slave, IDisposable
                                     if (session.TryDequeueClass2Data(out var firstFrame) && firstFrame != null)
                                     {
                                         bool hasMoreData = session.HasClass1Data();
+                                        
+                                        // 更新文件传输活动时间
+                                        session.UpdateFileTransferActivity();
+                                        
                                         await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
                                         return;
                                     }
@@ -989,6 +1062,9 @@ public class Iec102Slave : IIec102Slave, IDisposable
             return;
         }
         
+        // 更新文件传输活动时间
+        session.UpdateFileTransferActivity();
+        
         // 提取文件长度（小端序）
         int fileLengthFromMaster = userData[6] | (userData[7] << 8) | (userData[8] << 16) | (userData[9] << 24);
         
@@ -1062,6 +1138,9 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("收到文件重传请求（COT=0x0D）");
         
+        // 更新文件传输活动时间
+        session.UpdateFileTransferActivity();
+        
         // 获取当前文件任务并重新初始化
         var currentTask = session.GetCurrentFileTask();
         if (currentTask != null)
@@ -1072,6 +1151,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
             // 重置任务状态（重新分段发送）
             currentTask.SentBytes = 0;
             currentTask.SentSegments = 0;
+            currentTask.LastActivityTime = DateTime.UtcNow; // 重置活动时间
             
             // 清空数据队列中的旧数据
             if (currentTask.IsClass1)
@@ -1458,6 +1538,34 @@ internal class ClientSession : IDisposable
         _currentFileTask = null;
     }
     
+    /// <summary>
+    /// 更新文件传输任务的最后活动时间
+    /// </summary>
+    public void UpdateFileTransferActivity()
+    {
+        if (_currentFileTask != null)
+        {
+            _currentFileTask.LastActivityTime = DateTime.UtcNow;
+        }
+    }
+    
+    /// <summary>
+    /// 检查文件传输是否超时
+    /// </summary>
+    /// <param name="timeout">超时时长</param>
+    /// <param name="currentTime">当前时间</param>
+    /// <returns>如果超时返回true</returns>
+    public bool IsFileTransferTimedOut(TimeSpan timeout, DateTime currentTime)
+    {
+        if (_currentFileTask == null)
+        {
+            return false;
+        }
+        
+        var elapsed = currentTime - _currentFileTask.LastActivityTime;
+        return elapsed > timeout;
+    }
+    
     public void Dispose()
     {
         SendLock.Dispose();
@@ -1503,6 +1611,11 @@ internal class FileTransferTaskInfo
     /// 已发送段数
     /// </summary>
     public int SentSegments { get; set; }
+    
+    /// <summary>
+    /// 最后活动时间（用于超时检测）
+    /// </summary>
+    public DateTime LastActivityTime { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>
