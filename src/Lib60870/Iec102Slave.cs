@@ -683,7 +683,26 @@ public class Iec102Slave : IIec102Slave, IDisposable
             }
             
             // 读取文件内容
-            var fileContent = await File.ReadAllBytesAsync(fileTask.FilePath, cancellationToken);
+            // E文件统一采用GBK编码格式
+            byte[] fileContent;
+            try
+            {
+                // 注册GBK编码提供程序
+                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+                var gbk = System.Text.Encoding.GetEncoding("GBK");
+                
+                // 读取文本文件并转换为GBK字节
+                var fileText = await File.ReadAllTextAsync(fileTask.FilePath, gbk, cancellationToken);
+                fileContent = gbk.GetBytes(fileText);
+                
+                _logger.LogDebug("文件已读取为GBK编码: {FileName}, 原始大小={Size}字节", 
+                    fileTask.FileName, fileContent.Length);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "读取文件失败（GBK编码）: {FilePath}", fileTask.FilePath);
+                return false;
+            }
             
             // 验证文件大小
             const int MaxFileSize = 20480; // 512 * 40
