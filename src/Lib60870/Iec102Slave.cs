@@ -379,49 +379,26 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("处理1级数据请求: {Endpoint}", session.Endpoint);
         
-        // 先检查会话中是否有待传输的1级文件任务
-        if (session.HasFileTransferTasks())
-        {
-            if (session.TryDequeueFileTransferTask(out var fileTask) && fileTask != null && fileTask.IsClass1)
-            {
-                _logger.LogInformation("从会话中取出1级文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
-                    fileTask.FileRecordId, fileTask.FileName);
-                
-                // 发送文件分段
-                bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
-                
-                if (sendSuccess)
-                {
-                    // 文件段已全部排队，主循环会陆续发送
-                    // 检查是否还有更多数据
-                    bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
-                    
-                    // 如果队列中有数据，立即取出第一段发送
-                    if (session.TryDequeueClass1Data(out var firstFrame) && firstFrame != null)
-                    {
-                        await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
-                        return;
-                    }
-                }
-                
-                // 发送失败或无数据，返回NoData
-                bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
-                await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
-                return;
-            }
-        }
-        
-        // 从会话的1级队列中取数据
+        // 从会话的1级队列中取数据（优先发送已分段的数据）
         if (session.TryDequeueClass1Data(out var queuedFrame) && queuedFrame != null)
         {
             // 检查是否还有更多1级数据（设置ACD标志）
-            bool hasMoreClass1Data = session.HasClass1Data() || session.HasFileTransferTasks();
+            bool hasMoreClass1Data = session.HasClass1Data();
             
             await SendUserDataAsync(session, queuedFrame.TypeId, queuedFrame.Cot, queuedFrame.Data, hasMoreClass1Data, cancellationToken);
             return;
         }
         
-        // 无1级队列数据，尝试初始化1级文件传输
+        // 无1级队列数据，检查当前是否有文件任务正在传输
+        if (session.HasCurrentFileTask())
+        {
+            // 已有任务正在传输，等待传输完成后再获取新任务
+            _logger.LogDebug("会话 {Endpoint} 有文件任务正在传输，等待完成", session.Endpoint);
+            await SendNoDataAsync(session, false, cancellationToken);
+            return;
+        }
+        
+        // 无当前任务，尝试初始化新的1级文件传输
         if (_serviceProviderFactory != null)
         {
             try
@@ -448,7 +425,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
                             
                             if (acquiredFile != null)
                             {
-                                session.AddFileTransferTask(new FileTransferTaskInfo
+                                var fileTask = new FileTransferTaskInfo
                                 {
                                     FileRecordId = acquiredFile.Id,
                                     FileName = acquiredFile.OriginalFilename,
@@ -456,32 +433,30 @@ public class Iec102Slave : IIec102Slave, IDisposable
                                     FileSize = acquiredFile.FileSize,
                                     ReportTypeId = acquiredFile.ReportTypeId,
                                     IsClass1 = true
-                                });
+                                };
                                 
-                                _logger.LogInformation("为会话添加1级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                session.SetCurrentFileTask(fileTask);
+                                _logger.LogInformation("为会话设置1级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
                                     acquiredFile.Id, acquiredFile.OriginalFilename);
                                 
-                                // 立即处理这个任务
-                                if (session.TryDequeueFileTransferTask(out var task) && task != null)
+                                // 发送文件分段
+                                bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
+                                
+                                if (sendSuccess)
                                 {
-                                    // 发送文件分段
-                                    bool sendSuccess = await SendFileSegmentsAsync(session, task, cancellationToken);
-                                    
-                                    if (sendSuccess)
+                                    // 文件段已全部排队，立即取出第一段发送
+                                    if (session.TryDequeueClass1Data(out var firstFrame) && firstFrame != null)
                                     {
-                                        // 文件段已全部排队，立即取出第一段发送
-                                        if (session.TryDequeueClass1Data(out var firstFrame) && firstFrame != null)
-                                        {
-                                            bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
-                                            await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
-                                            return;
-                                        }
+                                        bool hasMoreData = session.HasClass1Data();
+                                        await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                                        return;
                                     }
-                                    
-                                    bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
-                                    await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
-                                    return;
                                 }
+                                
+                                // 发送失败，清除任务
+                                session.ClearCurrentFileTask();
+                                await SendNoDataAsync(session, false, cancellationToken);
+                                return;
                             }
                         }
                     }
@@ -504,33 +479,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
     {
         _logger.LogInformation("处理2级数据请求: {Endpoint}", session.Endpoint);
         
-        // 先检查会话中是否有待传输的文件任务
-        if (session.TryDequeueFileTransferTask(out var fileTask) && fileTask != null)
-        {
-            _logger.LogInformation("从会话中取出文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
-                fileTask.FileRecordId, fileTask.FileName);
-            
-            // 发送文件分段
-            bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
-            
-            if (sendSuccess)
-            {
-                // 文件段已全部排队，立即取出第一段发送
-                if (session.TryDequeueClass2Data(out var firstFrame) && firstFrame != null)
-                {
-                    bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
-                    await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
-                    return;
-                }
-            }
-            
-            // 发送失败或无数据
-            bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
-            await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
-            return;
-        }
-        
-        // 从会话的2级队列中取数据
+        // 从会话的2级队列中取数据（优先发送已分段的数据）
         if (session.TryDequeueClass2Data(out var queuedFrame) && queuedFrame != null)
         {
             // 检查是否有1级数据需要传输（设置ACD标志）
@@ -540,7 +489,17 @@ public class Iec102Slave : IIec102Slave, IDisposable
             return;
         }
         
-        // 无2级数据，尝试初始化文件传输
+        // 无2级队列数据，检查当前是否有文件任务正在传输
+        if (session.HasCurrentFileTask())
+        {
+            // 已有任务正在传输，等待传输完成后再获取新任务
+            _logger.LogDebug("会话 {Endpoint} 有文件任务正在传输，等待完成", session.Endpoint);
+            bool hasClass1Data = session.HasClass1Data();
+            await SendNoDataAsync(session, hasClass1Data, cancellationToken);
+            return;
+        }
+        
+        // 无当前任务，尝试初始化文件传输
         if (_serviceProviderFactory != null)
         {
             try
@@ -569,8 +528,8 @@ public class Iec102Slave : IIec102Slave, IDisposable
                             
                             if (acquiredFile != null)
                             {
-                                // 成功独占，添加到会话任务列表
-                                session.AddFileTransferTask(new FileTransferTaskInfo
+                                // 成功独占，设置为当前任务
+                                var fileTask = new FileTransferTaskInfo
                                 {
                                     FileRecordId = acquiredFile.Id,
                                     FileName = acquiredFile.OriginalFilename,
@@ -578,32 +537,31 @@ public class Iec102Slave : IIec102Slave, IDisposable
                                     FileSize = acquiredFile.FileSize,
                                     ReportTypeId = acquiredFile.ReportTypeId,
                                     IsClass1 = false
-                                });
+                                };
                                 
-                                _logger.LogInformation("为会话添加2级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                                session.SetCurrentFileTask(fileTask);
+                                _logger.LogInformation("为会话设置2级数据文件任务: FileRecordId={FileRecordId}, FileName={FileName}", 
                                     acquiredFile.Id, acquiredFile.OriginalFilename);
                                 
-                                // 立即处理这个任务
-                                if (session.TryDequeueFileTransferTask(out var task) && task != null)
+                                // 发送文件分段
+                                bool sendSuccess = await SendFileSegmentsAsync(session, fileTask, cancellationToken);
+                                
+                                if (sendSuccess)
                                 {
-                                    // 发送文件分段
-                                    bool sendSuccess = await SendFileSegmentsAsync(session, task, cancellationToken);
-                                    
-                                    if (sendSuccess)
+                                    // 文件段已全部排队，立即取出第一段发送
+                                    if (session.TryDequeueClass2Data(out var firstFrame) && firstFrame != null)
                                     {
-                                        // 文件段已全部排队，立即取出第一段发送
-                                        if (session.TryDequeueClass2Data(out var firstFrame) && firstFrame != null)
-                                        {
-                                            bool hasMoreData = session.HasFileTransferTasks() || session.HasClass1Data();
-                                            await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
-                                            return;
-                                        }
+                                        bool hasMoreData = session.HasClass1Data();
+                                        await SendUserDataAsync(session, firstFrame.TypeId, firstFrame.Cot, firstFrame.Data, hasMoreData, cancellationToken);
+                                        return;
                                     }
-                                    
-                                    bool hasMoreDataFinal = session.HasFileTransferTasks() || session.HasClass1Data();
-                                    await SendNoDataAsync(session, hasMoreDataFinal, cancellationToken);
-                                    return;
                                 }
+                                
+                                // 发送失败，清除任务
+                                session.ClearCurrentFileTask();
+                                bool hasClass1DataFinal = session.HasClass1Data();
+                                await SendNoDataAsync(session, hasClass1DataFinal, cancellationToken);
+                                return;
                             }
                         }
                     }
@@ -616,8 +574,8 @@ public class Iec102Slave : IIec102Slave, IDisposable
         }
         
         // 无2级数据，检查是否有1级数据（设置ACD标志）
-        bool hasClass1DataFinal = session.HasClass1Data();
-        await SendNoDataAsync(session, hasClass1DataFinal, cancellationToken);
+        bool hasClass1DataFinal2 = session.HasClass1Data();
+        await SendNoDataAsync(session, hasClass1DataFinal2, cancellationToken);
     }
     
     /// <summary>
@@ -1063,36 +1021,13 @@ public class Iec102Slave : IIec102Slave, IDisposable
         }
         else
         {
-            // 长度不一致，准备重传
+            // 长度不一致，准备重传（发送0x0C，等待主站发送0x0D）
             responseCot = CauseOfTransmission.ReconciliationReconfirm; // 0x0C
-            _logger.LogWarning("文件长度不一致: 发送={Sent}, 接收={Received}, 准备重传", 
+            _logger.LogWarning("文件长度不一致: 发送={Sent}, 接收={Received}, 准备重传（等待主站重传通知）", 
                 currentTask.SentBytes, fileLengthFromMaster);
             
-            // 重新初始化文件传输任务（重传）
-            var fileRecordRepo = GetFileRecordRepository();
-            if (fileRecordRepo != null)
-            {
-                var fileRecord = await fileRecordRepo.GetByIdAsync(currentTask.FileRecordId);
-                if (fileRecord != null)
-                {
-                    // 创建新的传输任务（重传）
-                    var retransmitTask = new FileTransferTaskInfo
-                    {
-                        FileRecordId = fileRecord.Id,
-                        FileName = fileRecord.OriginalFilename,
-                        FilePath = fileRecord.StoragePath,
-                        FileSize = fileRecord.FileSize,
-                        ReportTypeId = fileRecord.ReportTypeId,
-                        IsClass1 = IsClass1DataType(fileRecord.ReportType?.Code ?? "")
-                    };
-                    
-                    session.AddFileTransferTask(retransmitTask);
-                    _logger.LogInformation("已添加重传任务: FileRecordId={FileRecordId}", fileRecord.Id);
-                }
-            }
-            
-            // 清除当前任务
-            session.ClearCurrentFileTask();
+            // 注意：不在此处重新初始化任务，等待主站发送0x0D通知重传后再处理
+            // 当前任务保留，等待HandleFileRetransmitAsync处理
         }
         
         // 触发事件
@@ -1121,11 +1056,48 @@ public class Iec102Slave : IIec102Slave, IDisposable
     }
     
     /// <summary>
-    /// 处理文件重传请求
+    /// 处理文件重传请求（主站发送0x0D通知重传）
     /// </summary>
     private async Task HandleFileRetransmitAsync(ClientSession session, byte[] userData, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("收到文件重传请求");
+        _logger.LogInformation("收到文件重传请求（COT=0x0D）");
+        
+        // 获取当前文件任务并重新初始化
+        var currentTask = session.GetCurrentFileTask();
+        if (currentTask != null)
+        {
+            _logger.LogInformation("重新初始化文件传输任务: FileRecordId={FileRecordId}, FileName={FileName}", 
+                currentTask.FileRecordId, currentTask.FileName);
+            
+            // 重置任务状态（重新分段发送）
+            currentTask.SentBytes = 0;
+            currentTask.SentSegments = 0;
+            
+            // 清空数据队列中的旧数据
+            if (currentTask.IsClass1)
+            {
+                // 清空1级队列
+                while (session.TryDequeueClass1Data(out _)) { }
+            }
+            else
+            {
+                // 清空2级队列
+                while (session.TryDequeueClass2Data(out _)) { }
+            }
+            
+            // 重新分段并排队
+            bool resendSuccess = await SendFileSegmentsAsync(session, currentTask, cancellationToken);
+            
+            if (!resendSuccess)
+            {
+                _logger.LogError("重新分段文件失败: FileRecordId={FileRecordId}", currentTask.FileRecordId);
+                session.ClearCurrentFileTask();
+            }
+        }
+        else
+        {
+            _logger.LogWarning("收到重传请求但未找到当前文件任务");
+        }
         
         // 触发事件
         FileRetransmitRequest?.Invoke(this, new FileRetransmitEventArgs 
@@ -1133,14 +1105,14 @@ public class Iec102Slave : IIec102Slave, IDisposable
             Endpoint = session.Endpoint 
         });
         
-        // 发送确认（子站确认重传）
+        // 发送确认（子站确认重传，COT=0x0E）
         var control = ControlField.CreateSlaveFrame(FunctionCodes.ResponseUserData);
         
         var asdu = new List<byte>
         {
             0x91, // TypeId: Retransmit
             0x01, // VSQ
-            0x0E, // COT: 子站确认文件重传
+            CauseOfTransmission.RetransmitNotificationAck, // 0x0E: 子站确认文件重传
             (byte)(_stationAddress & 0xFF),
             (byte)((_stationAddress >> 8) & 0xFF),
             0x00  // RecordAddr
@@ -1376,10 +1348,7 @@ internal class ClientSession : IDisposable
     private readonly ConcurrentQueue<QueuedFrame> _class1Queue = new();
     private readonly ConcurrentQueue<QueuedFrame> _class2Queue = new();
     
-    // 会话级文件传输任务列表（内存中，不保存到数据库）
-    private readonly ConcurrentQueue<FileTransferTaskInfo> _fileTransferTasks = new();
-    
-    // 当前正在传输的文件任务（用于对账）
+    // 当前文件传输任务（单一任务模式，非队列）
     private FileTransferTaskInfo? _currentFileTask;
     
     private bool _expectedFcb;
@@ -1453,37 +1422,19 @@ internal class ClientSession : IDisposable
     }
     
     /// <summary>
-    /// 添加文件传输任务到会话
-    /// </summary>
-    public void AddFileTransferTask(FileTransferTaskInfo task)
-    {
-        _fileTransferTasks.Enqueue(task);
-        _logger.LogDebug("会话 {Endpoint} 添加文件传输任务: FileRecordId={FileRecordId}", Endpoint, task.FileRecordId);
-    }
-    
-    /// <summary>
-    /// 检查是否有待传输的文件任务
-    /// </summary>
-    public bool HasFileTransferTasks() => !_fileTransferTasks.IsEmpty;
-    
-    /// <summary>
-    /// 尝试取出文件传输任务
-    /// </summary>
-    public bool TryDequeueFileTransferTask(out FileTransferTaskInfo? task)
-    {
-        return _fileTransferTasks.TryDequeue(out task);
-    }
-    
-    /// <summary>
-    /// 设置当前正在传输的文件任务
+    /// 设置当前文件传输任务（单一任务模式）
     /// </summary>
     public void SetCurrentFileTask(FileTransferTaskInfo? task)
     {
         _currentFileTask = task;
+        if (task != null)
+        {
+            _logger.LogDebug("会话 {Endpoint} 设置文件传输任务: FileRecordId={FileRecordId}", Endpoint, task.FileRecordId);
+        }
     }
     
     /// <summary>
-    /// 获取当前正在传输的文件任务
+    /// 获取当前文件传输任务
     /// </summary>
     public FileTransferTaskInfo? GetCurrentFileTask()
     {
@@ -1491,10 +1442,19 @@ internal class ClientSession : IDisposable
     }
     
     /// <summary>
+    /// 检查是否有当前文件传输任务
+    /// </summary>
+    public bool HasCurrentFileTask() => _currentFileTask != null;
+    
+    /// <summary>
     /// 清除当前文件任务
     /// </summary>
     public void ClearCurrentFileTask()
     {
+        if (_currentFileTask != null)
+        {
+            _logger.LogDebug("会话 {Endpoint} 清除文件传输任务: FileRecordId={FileRecordId}", Endpoint, _currentFileTask.FileRecordId);
+        }
         _currentFileTask = null;
     }
     
