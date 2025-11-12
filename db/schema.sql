@@ -227,18 +227,28 @@ COMMENT ON COLUMN file_transfer_tasks.status IS '任务状态 (pending/in_progre
 -- ============================================================
 
 -- 插入默认管理员用户 (密码: admin123)
-INSERT INTO users (username, password_hash, role, enabled) 
-VALUES ('admin', '$2a$11$3eqvjhs.vVhKqmv8f.6ry.nKp6WdqLB5bSF1GXoF6H8BH.pX/9O7q', 'Admin', TRUE)
-ON CONFLICT (username) DO NOTHING;
+INSERT INTO users (username, password_hash, role, enabled)
+SELECT 'admin', '$2a$11$3eqvjhs.vVhKqmv8f.6ry.nKp6WdqLB5bSF1GXoF6H8BH.pX/9O7q', 'Admin', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM users WHERE username = 'admin'
+    );
 
 -- 插入默认 SFTP 配置示例
 INSERT INTO sftp_configs (name, host, port, username, auth_type, base_path_template, enabled)
-VALUES ('Default SFTP', 'sftp.example.com', 22, 'user', 'password', '/reports/{yyyy}/{MM}/{dd}/', TRUE)
-ON CONFLICT DO NOTHING;
+SELECT 'Default SFTP', 'sftp.example.com', 22, 'user', 'password', '/reports/{yyyy}/{MM}/{dd}/', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM sftp_configs WHERE name = 'Default SFTP'
+    );
 
 -- 插入示例报表类型
 INSERT INTO report_types (code, name, description, enabled)
-VALUES 
-    ('DAILY_ENERGY', '日能量报表', '每日能量统计报表', TRUE),
-    ('MONTHLY_SUMMARY', '月度汇总报表', '月度统计汇总报表', TRUE)
-ON CONFLICT (code) DO NOTHING;
+SELECT 'DAILY_ENERGY', '日能量报表', '每日能量统计报表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'DAILY_ENERGY'
+    );
+
+INSERT INTO report_types (code, name, description, enabled)
+SELECT 'MONTHLY_SUMMARY', '月度汇总报表', '月度统计汇总报表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'MONTHLY_SUMMARY'
+    );
