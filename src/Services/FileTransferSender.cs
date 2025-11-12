@@ -192,28 +192,35 @@ public class FileTransferSender : IFileTransferSender
         // 根据错误类型处理
         string errorMessage = errorCot switch
         {
-            CauseOfTransmission.FileTransferError => "主站报告文件传输错误",
+            CauseOfTransmission.FileTooLongError => "文件过长错误",
             CauseOfTransmission.InvalidFileNameFormat => "文件名格式无效",
-            CauseOfTransmission.FrameTooLong => "单帧数据过长",
+            CauseOfTransmission.FrameTooLongError => "单帧数据过长",
             _ => $"未知错误 (COT=0x{errorCot:X2})"
         };
 
         await UpdateTaskStatusAsync(task.Id, "failed", errorMessage, cancellationToken);
 
-        // 发送TI=144 COT=11错误确认给主站
-        // 如果还有数据待发送，设置ACD=1
+        // 发送对应的错误确认给主站
+        byte errorAckCot = errorCot switch
+        {
+            CauseOfTransmission.FileTooLongError => CauseOfTransmission.FileTooLongAck, // 0x10
+            CauseOfTransmission.InvalidFileNameFormat => CauseOfTransmission.InvalidFileNameFormatAck, // 0x12
+            CauseOfTransmission.FrameTooLongError => CauseOfTransmission.FrameTooLongAck, // 0x14
+            _ => CauseOfTransmission.FileTooLongAck // 默认
+        };
+        
         bool hasMoreData = task.SentSegments < (task.TotalSegments ?? 0);
-        byte[] ackData = BitConverter.GetBytes(task.FileRecordId); // 简单携带文件ID
+        byte[] ackData = BitConverter.GetBytes(task.FileRecordId);
         
         _slave.QueueClass1DataToSession(
             sessionEndpoint,
             0x90, // TI=144 (0x90) for file transfer control
-            CauseOfTransmission.FileTransferErrorAck, // COT=0x11
+            errorAckCot,
             ackData);
 
         _logger.LogInformation(
-            "已发送文件传输错误确认: 任务 #{TaskId}, ACD={HasMoreData}",
-            task.Id, hasMoreData);
+            "已发送文件传输错误确认: 任务 #{TaskId}, COT=0x{Cot:X2}, ACD={HasMoreData}",
+            task.Id, errorAckCot, hasMoreData);
     }
 
     // 私有方法：核心传输逻辑
