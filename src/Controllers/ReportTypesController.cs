@@ -13,11 +13,16 @@ namespace LpsGateway.Controllers;
 public class ReportTypesController : Controller
 {
     private readonly IReportTypeRepository _repository;
+    private readonly ISftpConfigRepository _sftpConfigRepository;
     private readonly ILogger<ReportTypesController> _logger;
 
-    public ReportTypesController(IReportTypeRepository repository, ILogger<ReportTypesController> logger)
+    public ReportTypesController(
+        IReportTypeRepository repository, 
+        ISftpConfigRepository sftpConfigRepository,
+        ILogger<ReportTypesController> logger)
     {
         _repository = repository;
+        _sftpConfigRepository = sftpConfigRepository;
         _logger = logger;
     }
 
@@ -27,6 +32,12 @@ public class ReportTypesController : Controller
     public async Task<IActionResult> Index()
     {
         var items = await _repository.GetAllAsync();
+        
+        // 加载SFTP配置信息用于显示
+        var sftpConfigs = await _sftpConfigRepository.GetAllAsync();
+        var sftpConfigDict = sftpConfigs.ToDictionary(s => s.Id, s => s.Name);
+        ViewBag.SftpConfigNames = sftpConfigDict;
+        
         return View(items);
     }
 
@@ -34,8 +45,10 @@ public class ReportTypesController : Controller
     /// 创建页面
     /// </summary>
     [Authorize(Roles = "Admin")]
-    public IActionResult Create()
+    public async Task<IActionResult> Create()
     {
+        var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+        ViewBag.SftpConfigs = sftpConfigs;
         return View();
     }
 
@@ -49,6 +62,8 @@ public class ReportTypesController : Controller
     {
         if (!ModelState.IsValid)
         {
+            var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+            ViewBag.SftpConfigs = sftpConfigs;
             return View(dto);
         }
 
@@ -58,6 +73,8 @@ public class ReportTypesController : Controller
             if (await _repository.ExistsAsync(dto.Code))
             {
                 ModelState.AddModelError("Code", $"报表类型编码 '{dto.Code}' 已存在");
+                var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+                ViewBag.SftpConfigs = sftpConfigs;
                 return View(dto);
             }
 
@@ -67,6 +84,7 @@ public class ReportTypesController : Controller
                 Name = dto.Name,
                 Description = dto.Description,
                 DefaultSftpConfigId = dto.DefaultSftpConfigId,
+                PathTemplate = dto.PathTemplate,
                 Enabled = dto.Enabled
             };
 
@@ -78,6 +96,8 @@ public class ReportTypesController : Controller
         {
             _logger.LogError(ex, "创建报表类型失败");
             ModelState.AddModelError(string.Empty, "创建失败，请重试");
+            var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+            ViewBag.SftpConfigs = sftpConfigs;
             return View(dto);
         }
     }
@@ -101,9 +121,12 @@ public class ReportTypesController : Controller
             Name = reportType.Name,
             Description = reportType.Description,
             DefaultSftpConfigId = reportType.DefaultSftpConfigId,
+            PathTemplate = reportType.PathTemplate,
             Enabled = reportType.Enabled
         };
 
+        var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+        ViewBag.SftpConfigs = sftpConfigs;
         return View(dto);
     }
 
@@ -122,6 +145,8 @@ public class ReportTypesController : Controller
 
         if (!ModelState.IsValid)
         {
+            var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+            ViewBag.SftpConfigs = sftpConfigs;
             return View(dto);
         }
 
@@ -137,6 +162,8 @@ public class ReportTypesController : Controller
             if (await _repository.ExistsAsync(dto.Code, id))
             {
                 ModelState.AddModelError("Code", $"报表类型编码 '{dto.Code}' 已被其他记录使用");
+                var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+                ViewBag.SftpConfigs = sftpConfigs;
                 return View(dto);
             }
 
@@ -144,6 +171,7 @@ public class ReportTypesController : Controller
             existing.Name = dto.Name;
             existing.Description = dto.Description;
             existing.DefaultSftpConfigId = dto.DefaultSftpConfigId;
+            existing.PathTemplate = dto.PathTemplate;
             existing.Enabled = dto.Enabled;
 
             await _repository.UpdateAsync(existing);
@@ -154,6 +182,8 @@ public class ReportTypesController : Controller
         {
             _logger.LogError(ex, "更新报表类型失败: {Id}", id);
             ModelState.AddModelError(string.Empty, "更新失败，请重试");
+            var sftpConfigs = await _sftpConfigRepository.GetAllAsync(enabled: true);
+            ViewBag.SftpConfigs = sftpConfigs;
             return View(dto);
         }
     }

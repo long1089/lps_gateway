@@ -6,7 +6,7 @@
 <h2>编辑报表类型</h2>
 
 <div class="row">
-    <div class="col-md-6">
+    <div class="col-md-8">
         <form asp-action="Edit" method="post">
             <input type="hidden" asp-for="Id" />
             <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
@@ -27,6 +27,35 @@
                 <label asp-for="Description" class="form-label">描述</label>
                 <textarea asp-for="Description" class="form-control" rows="3"></textarea>
                 <span asp-validation-for="Description" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3">
+                <label asp-for="DefaultSftpConfigId" class="form-label">SFTP配置</label>
+                <select asp-for="DefaultSftpConfigId" class="form-select">
+                    <option value="">-- 请选择SFTP配置 --</option>
+                    @if (ViewBag.SftpConfigs != null)
+                    {
+                        var configs = ViewBag.SftpConfigs as List<LpsGateway.Data.Models.SftpConfig>;
+                        if (configs != null)
+                        {
+                            foreach (var config in configs)
+                            {
+                                <option value="@config.Id">@config.Name (@config.Host)</option>
+                            }
+                        }
+                    }
+                </select>
+                <span asp-validation-for="DefaultSftpConfigId" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3">
+                <label asp-for="PathTemplate" class="form-label">下载路径模板</label>
+                <input asp-for="PathTemplate" class="form-control" placeholder="/data/{yyyy}/{MM}/{dd}" />
+                <div class="form-text">
+                    支持模板变量：{yyyy} - 年份, {MM} - 月份, {dd} - 日期, {HH} - 小时, {mm} - 分钟<br/>
+                    示例：/data/{yyyy}/{MM}/{dd} 或 /reports/{yyyy}-{MM}-{dd}/{HH}
+                </div>
+                <span asp-validation-for="PathTemplate" class="text-danger"></span>
             </div>
             
             <div class="mb-3 form-check">

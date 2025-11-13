@@ -39,6 +39,12 @@ public class ReportType
     public int? DefaultSftpConfigId { get; set; }
 
     /// <summary>
+    /// 下载路径模板，支持 {yyyy}/{MM}/{dd}/{HH}/{mm}
+    /// </summary>
+    [SugarColumn(Length = 500, IsNullable = true, ColumnName = "path_template")]
+    public string? PathTemplate { get; set; }
+
+    /// <summary>
     /// 是否启用
     /// </summary>
     [SugarColumn(IsNullable = false)]

@@ -53,8 +53,9 @@ public class FileDownloadJob : IJob
             var sftpConfigId = reportType.DefaultSftpConfigId.Value;
             var now = DateTime.Now;
             
-            // 解析路径模板
-            var remotePath = _sftpManager.ParsePathTemplate(reportType.Code, now);
+            // 使用ReportType配置的PathTemplate，如果没有则使用默认路径
+            var pathTemplate = reportType.PathTemplate ?? "/";
+            var remotePath = _sftpManager.ParsePathTemplate(pathTemplate, now);
             
             // 列出远程文件
             var files = await _sftpManager.ListFilesAsync(sftpConfigId, remotePath, context.CancellationToken);

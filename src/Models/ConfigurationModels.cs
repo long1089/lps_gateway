@@ -10,6 +10,7 @@ public class ReportTypeDto
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public int? DefaultSftpConfigId { get; set; }
+    public string? PathTemplate { get; set; }
     public bool Enabled { get; set; } = true;
 }
 
@@ -27,7 +28,6 @@ public class SftpConfigDto
     public string? Password { get; set; }
     public string? KeyPath { get; set; }
     public string? KeyPassphrase { get; set; }
-    public string BasePathTemplate { get; set; } = string.Empty;
     public int ConcurrencyLimit { get; set; } = 5;
     public int TimeoutSec { get; set; } = 30;
     public bool Enabled { get; set; } = true;
