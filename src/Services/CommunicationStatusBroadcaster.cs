@@ -12,7 +12,7 @@ namespace LpsGateway.Services;
 public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
 {
     private readonly IHubContext<CommunicationStatusHub> _hubContext;
-    private readonly ISqlSugarClient _db;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<CommunicationStatusBroadcaster> _logger;
     
     // 内存中的连接状态
@@ -23,11 +23,11 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
 
     public CommunicationStatusBroadcaster(
         IHubContext<CommunicationStatusHub> hubContext,
-        ISqlSugarClient db,
+        IServiceProvider serviceProvider,
         ILogger<CommunicationStatusBroadcaster> logger)
     {
         _hubContext = hubContext;
-        _db = db;
+        _serviceProvider = serviceProvider;
         _logger = logger;
         _masterIsRunning = false;
     }
@@ -104,23 +104,31 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
             var today = DateTime.UtcNow.Date;
             var tomorrow = today.AddDays(1);
 
-            // 统计今日发送的任务数（作为今日发送帧数的近似）
-            var todayTasks = await _db.Queryable<FileTransferTask>()
-                .Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow)
-                .CountAsync();
-
-            // 获取最后活动时间
+            int todayTasks = 0;
             DateTime? lastActivity = null;
-            try
+
+            // 使用服务定位器模式创建作用域来访问数据库
+            using (var scope = _serviceProvider.CreateScope())
             {
-                lastActivity = await _db.Queryable<FileTransferTask>()
-                    .OrderByDescending(t => t.CreatedAt)
-                    .Select(t => t.CreatedAt)
-                    .FirstAsync();
-            }
-            catch
-            {
-                // 如果没有记录，使用内存中的值
+                var db = scope.ServiceProvider.GetRequiredService<ISqlSugarClient>();
+                
+                // 统计今日发送的任务数（作为今日发送帧数的近似）
+                todayTasks = await db.Queryable<FileTransferTask>()
+                    .Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow)
+                    .CountAsync();
+
+                // 获取最后活动时间
+                try
+                {
+                    lastActivity = await db.Queryable<FileTransferTask>()
+                        .OrderByDescending(t => t.CreatedAt)
+                        .Select(t => t.CreatedAt)
+                        .FirstAsync();
+                }
+                catch
+                {
+                    // 如果没有记录，使用内存中的值
+                }
             }
 
             int activeConnections;
