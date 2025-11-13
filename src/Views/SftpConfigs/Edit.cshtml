@@ -1,0 +1,128 @@
+@model SftpConfigDto
+@{
+    ViewData["Title"] = "编辑SFTP配置";
+}
+
+<h2>编辑SFTP配置</h2>
+
+<div class="row">
+    <div class="col-md-8">
+        <form asp-action="Edit" method="post">
+            <input type="hidden" asp-for="Id" />
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            
+            <div class="mb-3">
+                <label asp-for="Name" class="form-label">配置名称 <span class="text-danger">*</span></label>
+                <input asp-for="Name" class="form-control" required />
+                <span asp-validation-for="Name" class="text-danger"></span>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="mb-3">
+                        <label asp-for="Host" class="form-label">主机地址 <span class="text-danger">*</span></label>
+                        <input asp-for="Host" class="form-control" placeholder="192.168.1.100 或 sftp.example.com" required />
+                        <span asp-validation-for="Host" class="text-danger"></span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="mb-3">
+                        <label asp-for="Port" class="form-label">端口 <span class="text-danger">*</span></label>
+                        <input asp-for="Port" class="form-control" type="number" required />
+                        <span asp-validation-for="Port" class="text-danger"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label asp-for="Username" class="form-label">用户名 <span class="text-danger">*</span></label>
+                <input asp-for="Username" class="form-control" required />
+                <span asp-validation-for="Username" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3">
+                <label asp-for="AuthType" class="form-label">认证类型 <span class="text-danger">*</span></label>
+                <select asp-for="AuthType" class="form-select" id="authTypeSelect" onchange="toggleAuthFields()">
+                    <option value="password">密码认证</option>
+                    <option value="key">私钥认证</option>
+                </select>
+                <span asp-validation-for="AuthType" class="text-danger"></span>
+            </div>
+            
+            <div id="passwordFields">
+                <div class="mb-3">
+                    <label asp-for="Password" class="form-label">密码</label>
+                    <input asp-for="Password" type="password" class="form-control" placeholder="如需更新密码请输入新密码" />
+                    <div class="form-text">留空则保持原密码不变</div>
+                    <span asp-validation-for="Password" class="text-danger"></span>
+                </div>
+            </div>
+            
+            <div id="keyFields" style="display: none;">
+                <div class="mb-3">
+                    <label asp-for="KeyPath" class="form-label">私钥文件路径</label>
+                    <input asp-for="KeyPath" class="form-control" placeholder="/path/to/private_key" />
+                    <div class="form-text">私钥文件在服务器上的绝对路径</div>
+                    <span asp-validation-for="KeyPath" class="text-danger"></span>
+                </div>
+                
+                <div class="mb-3">
+                    <label asp-for="KeyPassphrase" class="form-label">私钥密码短语（可选）</label>
+                    <input asp-for="KeyPassphrase" type="password" class="form-control" placeholder="如需更新密码短语请输入" />
+                    <div class="form-text">如果私钥有密码保护，请输入密码。留空则保持不变</div>
+                    <span asp-validation-for="KeyPassphrase" class="text-danger"></span>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label asp-for="ConcurrencyLimit" class="form-label">并发限制</label>
+                        <input asp-for="ConcurrencyLimit" class="form-control" type="number" min="1" max="50" />
+                        <div class="form-text">同时下载文件的最大数量</div>
+                        <span asp-validation-for="ConcurrencyLimit" class="text-danger"></span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label asp-for="TimeoutSec" class="form-label">超时时间（秒）</label>
+                        <input asp-for="TimeoutSec" class="form-control" type="number" min="10" max="300" />
+                        <span asp-validation-for="TimeoutSec" class="text-danger"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-3 form-check">
+                <input asp-for="Enabled" class="form-check-input" />
+                <label asp-for="Enabled" class="form-check-label">启用</label>
+            </div>
+            
+            <div class="mb-3">
+                <button type="submit" class="btn btn-primary">保存</button>
+                <a asp-action="Index" class="btn btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        function toggleAuthFields() {
+            var authType = document.getElementById('authTypeSelect').value;
+            var passwordFields = document.getElementById('passwordFields');
+            var keyFields = document.getElementById('keyFields');
+            
+            if (authType === 'password') {
+                passwordFields.style.display = 'block';
+                keyFields.style.display = 'none';
+            } else {
+                passwordFields.style.display = 'none';
+                keyFields.style.display = 'block';
+            }
+        }
+        
+        // Initialize on page load
+        toggleAuthFields();
+    </script>
+}

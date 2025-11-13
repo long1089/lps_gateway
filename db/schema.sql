@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS report_types (
     name VARCHAR(100) NOT NULL,
     description TEXT,
     default_sftp_config_id INTEGER,
+    path_template VARCHAR(500),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -68,6 +69,7 @@ COMMENT ON TABLE report_types IS '报表类型配置';
 COMMENT ON COLUMN report_types.code IS '报表类型编码';
 COMMENT ON COLUMN report_types.name IS '报表类型名称';
 COMMENT ON COLUMN report_types.default_sftp_config_id IS '默认SFTP配置ID';
+COMMENT ON COLUMN report_types.path_template IS '下载路径模板，支持 {yyyy}/{MM}/{dd}/{HH}/{mm}';
 
 -- SFTP 配置表
 CREATE TABLE IF NOT EXISTS sftp_configs (
@@ -80,7 +82,6 @@ CREATE TABLE IF NOT EXISTS sftp_configs (
     password_encrypted TEXT,
     key_path VARCHAR(500),
     key_passphrase_encrypted TEXT,
-    base_path_template VARCHAR(500) NOT NULL,
     concurrency_limit INTEGER NOT NULL DEFAULT 5,
     timeout_sec INTEGER NOT NULL DEFAULT 30,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -93,7 +94,6 @@ CREATE INDEX idx_sftp_configs_enabled ON sftp_configs(enabled);
 COMMENT ON TABLE sftp_configs IS 'SFTP服务器配置';
 COMMENT ON COLUMN sftp_configs.auth_type IS '认证类型 (password/key)';
 COMMENT ON COLUMN sftp_configs.password_encrypted IS '加密的密码';
-COMMENT ON COLUMN sftp_configs.base_path_template IS '路径模板，支持 {yyyy}/{MM}/{dd}/{HH}/{mm}';
 
 -- 调度配置表
 CREATE TABLE IF NOT EXISTS schedules (

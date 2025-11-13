@@ -61,7 +61,6 @@ public class SftpConfigsController : Controller
                 Port = dto.Port,
                 Username = dto.Username,
                 AuthType = dto.AuthType,
-                BasePathTemplate = dto.BasePathTemplate,
                 ConcurrencyLimit = dto.ConcurrencyLimit,
                 TimeoutSec = dto.TimeoutSec,
                 Enabled = dto.Enabled
@@ -115,7 +114,6 @@ public class SftpConfigsController : Controller
             Port = config.Port,
             Username = config.Username,
             AuthType = config.AuthType,
-            BasePathTemplate = config.BasePathTemplate,
             ConcurrencyLimit = config.ConcurrencyLimit,
             TimeoutSec = config.TimeoutSec,
             Enabled = config.Enabled,
@@ -156,7 +154,6 @@ public class SftpConfigsController : Controller
             existing.Port = dto.Port;
             existing.Username = dto.Username;
             existing.AuthType = dto.AuthType;
-            existing.BasePathTemplate = dto.BasePathTemplate;
             existing.ConcurrencyLimit = dto.ConcurrencyLimit;
             existing.TimeoutSec = dto.TimeoutSec;
             existing.Enabled = dto.Enabled;

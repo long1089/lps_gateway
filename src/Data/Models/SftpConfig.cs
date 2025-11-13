@@ -63,12 +63,6 @@ public class SftpConfig
     public string? KeyPassphraseEncrypted { get; set; }
 
     /// <summary>
-    /// 路径模板，支持 {yyyy}/{MM}/{dd}/{HH}/{mm}
-    /// </summary>
-    [SugarColumn(Length = 500, IsNullable = false, ColumnName = "base_path_template")]
-    public string BasePathTemplate { get; set; } = string.Empty;
-
-    /// <summary>
     /// 并发限制
     /// </summary>
     [SugarColumn(IsNullable = false, ColumnName = "concurrency_limit")]
