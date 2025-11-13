@@ -19,26 +19,26 @@ namespace LpsGateway.Extensions
                 {
                     tableName = it.AfterData.FirstOrDefault()?.TableName;
                 }
-                if (tableName == null)
+                if (tableName == null || tableName.ToLower() == "audit_logs")
                 {
                     return;
                 }
 
                 // 2. 获取变更前后数据
-                var beforeColumns = it.BeforeData.FirstOrDefault()?.Columns ?? new List<DiffLogColumnInfo>();
-                var afterColumns = it.AfterData.FirstOrDefault()?.Columns ?? new List<DiffLogColumnInfo>();
+                var beforeColumns = it.BeforeData?.FirstOrDefault()?.Columns ?? new List<DiffLogColumnInfo>();
+                var afterColumns = it.AfterData?.FirstOrDefault()?.Columns ?? new List<DiffLogColumnInfo>();
 
                 // 3. 获取当前用户信息（基于 IHttpContextAccessor）
                 var httpContext = httpContextAccessor.HttpContext;
-                int operatorId = 0;
+                int? operatorId = null;
                 string ipAddress = "未知IP";
 
                 if (httpContext != null)
                 {
                     // 已登录用户获取信息
-                    if (httpContext.User.Identity?.IsAuthenticated ?? false)
+                    if (httpContext.IsAuthenticated())
                     {
-                        operatorId = int.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out int id) ? id : 0;
+                        operatorId = httpContext.GetUserId();
                     }
 
                     // 获取 IP 和浏览器信息
@@ -46,14 +46,14 @@ namespace LpsGateway.Extensions
                 }
 
                 // 4. 构建字段变更明细
-                var beforeColumnDict = beforeColumns.ToDictionary(col => col.ColumnName, col => col.Value);
-                var afterColumnDict = afterColumns.ToDictionary(col => col.ColumnName, col => col.Value);
+                var beforeColumnDict = beforeColumns.ToDictionary(col => col.ColumnName, col => col.Value == DBNull.Value ? null : col.Value);
+                var afterColumnDict = afterColumns.ToDictionary(col => col.ColumnName, col => col.Value == DBNull.Value ? null : col.Value);
 
                 // 5. 构建审计日志实体
                 var auditLog = new AuditLog
                 {
                     Resource = tableName,
-                    Action = it.DiffType.ToString(),
+                    Action = it.DiffType.ToString().ToUpper(),
                     CreatedAt = DateTime.Now,
                     UserId = operatorId,
                     IpAddress = ipAddress,

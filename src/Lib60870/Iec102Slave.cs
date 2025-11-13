@@ -197,7 +197,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
             {
                 await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken); // 每10秒检查一次
                 
-                var now = DateTime.UtcNow;
+                var now = DateTime.Now;
                 
                 foreach (var kvp in _sessions.ToArray())
                 {
@@ -1151,7 +1151,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
             // 重置任务状态（重新分段发送）
             currentTask.SentBytes = 0;
             currentTask.SentSegments = 0;
-            currentTask.LastActivityTime = DateTime.UtcNow; // 重置活动时间
+            currentTask.LastActivityTime = DateTime.Now; // 重置活动时间
             
             // 清空数据队列中的旧数据
             if (currentTask.IsClass1)
@@ -1322,7 +1322,7 @@ public class Iec102Slave : IIec102Slave, IDisposable
             {
                 fileRecord.ErrorMessage = errorMessage;
             }
-            fileRecord.UpdatedAt = DateTime.UtcNow;
+            fileRecord.UpdatedAt = DateTime.Now;
             
             await fileRecordRepo.UpdateAsync(fileRecord);
             
@@ -1545,7 +1545,7 @@ internal class ClientSession : IDisposable
     {
         if (_currentFileTask != null)
         {
-            _currentFileTask.LastActivityTime = DateTime.UtcNow;
+            _currentFileTask.LastActivityTime = DateTime.Now;
         }
     }
     
@@ -1595,7 +1595,7 @@ internal class FileTransferTaskInfo
     public long FileSize { get; set; }
     public int ReportTypeId { get; set; }
     public bool IsClass1 { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
     
     /// <summary>
     /// 已发送的字节数（用于对账比对）
@@ -1615,7 +1615,7 @@ internal class FileTransferTaskInfo
     /// <summary>
     /// 最后活动时间（用于超时检测）
     /// </summary>
-    public DateTime LastActivityTime { get; set; } = DateTime.UtcNow;
+    public DateTime LastActivityTime { get; set; } = DateTime.Now;
 }
 
 /// <summary>

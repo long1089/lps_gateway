@@ -54,7 +54,7 @@ public class FileTransferTask
     /// 创建时间
     /// </summary>
     [SugarColumn(IsNullable = false, ColumnName = "created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
 
     /// <summary>
     /// 开始时间

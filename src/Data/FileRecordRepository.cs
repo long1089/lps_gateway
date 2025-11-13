@@ -106,8 +106,8 @@ public class FileRecordRepository : IFileRecordRepository
     {
         try
         {
-            fileRecord.CreatedAt = DateTime.UtcNow;
-            fileRecord.UpdatedAt = DateTime.UtcNow;
+            fileRecord.CreatedAt = DateTime.Now;
+            fileRecord.UpdatedAt = DateTime.Now;
             
             return await _db.Insertable(fileRecord)
                 .ExecuteReturnIdentityAsync();
@@ -124,7 +124,7 @@ public class FileRecordRepository : IFileRecordRepository
     {
         try
         {
-            fileRecord.UpdatedAt = DateTime.UtcNow;
+            fileRecord.UpdatedAt = DateTime.Now;
             
             var result = await _db.Updateable(fileRecord)
                 .ExecuteCommandAsync();
@@ -210,7 +210,7 @@ public class FileRecordRepository : IFileRecordRepository
             
             // 尝试更新为当前会话ID
             fileRecord.ProcessSessionId = sessionId;
-            fileRecord.UpdatedAt = DateTime.UtcNow;
+            fileRecord.UpdatedAt = DateTime.Now;
             
             var updated = await _db.Updateable(fileRecord)
                 .Where(f => f.Id == fileRecordId)

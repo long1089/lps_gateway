@@ -1,5 +1,6 @@
-using SqlSugar;
 using LpsGateway.Data.Models;
+using LpsGateway.Extensions;
+using SqlSugar;
 
 namespace LpsGateway.Data;
 
@@ -10,11 +11,13 @@ public class AuditLogRepository : IAuditLogRepository
 {
     private readonly ISqlSugarClient _db;
     private readonly ILogger<AuditLogRepository> _logger;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public AuditLogRepository(ISqlSugarClient db, ILogger<AuditLogRepository> logger)
+    public AuditLogRepository(ISqlSugarClient db, ILogger<AuditLogRepository> logger, IHttpContextAccessor httpContextAccessor)
     {
         _db = db;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     /// <inheritdoc/>
@@ -102,5 +105,17 @@ public class AuditLogRepository : IAuditLogRepository
             _logger.LogError(ex, "统计审计日志失败");
             throw;
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task AddLogAsync(string action, int? userId = null, string? resource = null, AuditLog.AuditLogFieldChange? fieldChange = null)
+    {
+        _ = await _db.Insertable<AuditLog>(new AuditLog
+        {
+            Action = action,
+            CreatedAt = DateTime.Now,
+            UserId = userId ?? _httpContextAccessor.HttpContext?.GetUserId(),
+            IpAddress = _httpContextAccessor.HttpContext?.GetUserIpAddress(),
+        }).ExecuteCommandAsync();
     }
 }

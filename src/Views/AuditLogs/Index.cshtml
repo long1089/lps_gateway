@@ -1,145 +1,146 @@
+@using Newtonsoft.Json
 @model List<LpsGateway.Data.Models.AuditLog>
 @{
-    ViewData["Title"] = "审计日志";
-    var action = ViewBag.Action as string;
-    var count = ViewBag.Count as int? ?? 100;
+	ViewData["Title"] = "审计日志";
+	var action = ViewBag.Act as string;
+	var count = ViewBag.Count as int? ?? 100;
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i class="bi bi-file-text"></i> 审计日志</h1>
-    <div>
-        <a asp-action="Statistics" class="btn btn-outline-primary">
-            <i class="bi bi-bar-chart"></i> 统计报表
-        </a>
-    </div>
+	<h1><i class="bi bi-file-text"></i> 审计日志</h1>
+	<div>
+		<a asp-action="Statistics" class="btn btn-outline-primary">
+			<i class="bi bi-bar-chart"></i> 统计报表
+		</a>
+	</div>
 </div>
 
 @if (TempData["Error"] != null)
 {
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        @TempData["Error"]
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div>
+	<div class="alert alert-danger alert-dismissible fade show" role="alert">
+		@TempData["Error"]
+		<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+	</div>
 }
 
 <div class="card mb-4">
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-4">
-                <label for="action" class="form-label">操作类型</label>
-                <select name="action" id="action" class="form-select">
-                    <option value="">全部</option>
-                    <option value="Login" selected="@(action == "LOGIN")">登录</option>
-                    <option value="Logout" selected="@(action == "LOGOUT")">登出</option>
-                    <option value="Create" selected="@(action == "CREATE")">创建</option>
-                    <option value="Update" selected="@(action == "UPDATE")">更新</option>
-                    <option value="Delete" selected="@(action == "DELETE")">删除</option>
-                    <option value="Download" selected="@(action == "DOWNLOAD")">下载</option>
-                    <option value="Upload" selected="@(action == "UPLOAD")">上传</option>
-                </select>
-            </div>
-            <div class="col-md-4">
-                <label for="count" class="form-label">显示数量</label>
-                <select name="count" id="count" class="form-select">
-                    <option value="50" selected="@(count == 50)">50</option>
-                    <option value="100" selected="@(count == 100)">100</option>
-                    <option value="200" selected="@(count == 200)">200</option>
-                    <option value="500" selected="@(count == 500)">500</option>
-                </select>
-            </div>
-            <div class="col-md-4 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-funnel"></i> 筛选
-                </button>
-            </div>
-        </form>
-    </div>
+	<div class="card-body">
+		<form method="get" class="row g-3">
+			<div class="col-md-4">
+				<label for="act" class="form-label">操作类型 @(action)</label>
+				<select name="act" id="act" class="form-select">
+					<option value="" selected="@(action == "")">全部</option>
+					<option value="LOGIN" selected="@(action == "LOGIN")">登录</option>
+					<option value="LOGOUT" selected="@(action == "LOGOUT")">登出</option>
+					<option value="CREATE" selected="@(action == "CREATE")">创建</option>
+					<option value="UPDATE" selected="@(action == "UPDATE")">更新</option>
+					<option value="DELETE" selected="@(action == "DELETE")">删除</option>
+					<option value="DOWNLOAD" selected="@(action == "DOWNLOAD")">下载</option>
+					<option value="UPLOAD" selected="@(action == "UPLOAD")">上传</option>
+				</select>
+			</div>
+			<div class="col-md-4">
+				<label for="count" class="form-label">显示数量</label>
+				<select name="count" id="count" class="form-select">
+					<option value="50" selected="@(count == 50)">50</option>
+					<option value="100" selected="@(count == 100)">100</option>
+					<option value="200" selected="@(count == 200)">200</option>
+					<option value="500" selected="@(count == 500)">500</option>
+				</select>
+			</div>
+			<div class="col-md-4 d-flex align-items-end">
+				<button type="submit" class="btn btn-primary">
+					<i class="bi bi-funnel"></i> 筛选
+				</button>
+			</div>
+		</form>
+	</div>
 </div>
 
 <div class="card">
-    <div class="card-body">
-        @if (Model.Any())
-        {
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>时间</th>
-                            <th>用户ID</th>
-                            <th>操作</th>
-                            <th>资源</th>
-                            <th>IP地址</th>
-                            <th>详情</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var log in Model)
-                        {
-                            <tr>
-                                <td>@log.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                                <td>@(log.UserId?.ToString() ?? "-")</td>
-                                <td>
-                                    <span class="badge bg-@GetActionBadgeColor(log.Action)">
-                                        @log.Action
-                                    </span>
-                                </td>
-                                <td>@log.Resource</td>
-                                <td>@(log.IpAddress ?? "-")</td>
-                                <td>
-                                    @if (log.Details != null)
-                                    {
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" 
-                                                data-bs-toggle="modal" 
-                                                data-bs-target="#detailModal-@log.Id">
-                                            <i class="bi bi-eye"></i> 查看
-                                        </button>
-                                        
-                                        <!-- Modal -->
-                                        <div class="modal fade" id="detailModal-@log.Id" tabindex="-1">
-                                            <div class="modal-dialog modal-lg">
-                                                <div class="modal-content">
-                                                    <div class="modal-header">
-                                                        <h5 class="modal-title">审计详情</h5>
-                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                    </div>
-                                                    <div class="modal-body">
-                                                        <pre>@log.Details</pre>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted">-</span>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-        else
-        {
-            <p class="text-muted text-center mb-0">暂无审计日志</p>
-        }
-    </div>
+	<div class="card-body">
+		@if (Model.Any())
+		{
+			<div class="table-responsive">
+				<table class="table table-hover">
+					<thead>
+						<tr>
+							<th>时间</th>
+							<th>用户ID</th>
+							<th>操作</th>
+							<th>资源</th>
+							<th>IP地址</th>
+							<th>详情</th>
+						</tr>
+					</thead>
+					<tbody>
+						@foreach (var log in Model)
+						{
+							<tr>
+								<td>@log.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+								<td>@(log.UserId?.ToString() ?? "-")</td>
+								<td>
+									<span class="badge bg-@GetActionBadgeColor(log.Action)">
+										@log.Action
+									</span>
+								</td>
+								<td>@log.Resource</td>
+								<td>@(log.IpAddress ?? "-")</td>
+								<td>
+									@if (log.Details != null)
+									{
+										<button type="button" class="btn btn-sm btn-outline-secondary"
+												data-bs-toggle="modal"
+												data-bs-target="#detailModal-@log.Id">
+											<i class="bi bi-eye"></i> 查看
+										</button>
+
+										<!-- Modal -->
+										<div class="modal fade" id="detailModal-@log.Id" tabindex="-1">
+											<div class="modal-dialog modal-lg">
+												<div class="modal-content">
+													<div class="modal-header">
+														<h5 class="modal-title">审计详情</h5>
+														<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+													</div>
+													<div class="modal-body">
+														<pre>@JsonConvert.SerializeObject(log.Details, Formatting.Indented)</pre>
+													</div>
+												</div>
+											</div>
+										</div>
+									}
+									else
+									{
+										<span class="text-muted">-</span>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+		else
+		{
+			<p class="text-muted text-center mb-0">暂无审计日志</p>
+		}
+	</div>
 </div>
 
 @functions {
-    private string GetActionBadgeColor(string action)
-    {
-        return action switch
-        {
-            "Login" => "success",
-            "Logout" => "secondary",
-            "Create" => "primary",
-            "Update" => "info",
-            "Delete" => "danger",
-            "Download" => "warning",
-            "Upload" => "warning",
-            _ => "secondary"
-        };
-    }
+	private string GetActionBadgeColor(string action)
+	{
+		return action switch
+		{
+			"Login" => "success",
+			"Logout" => "secondary",
+			"Create" => "primary",
+			"Update" => "info",
+			"Delete" => "danger",
+			"Download" => "warning",
+			"Upload" => "warning",
+			_ => "secondary"
+		};
+	}
 }

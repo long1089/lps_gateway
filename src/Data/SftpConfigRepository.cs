@@ -36,8 +36,8 @@ public class SftpConfigRepository : ISftpConfigRepository
 
     public async Task<SftpConfig> CreateAsync(SftpConfig config)
     {
-        config.CreatedAt = DateTime.UtcNow;
-        config.UpdatedAt = DateTime.UtcNow;
+        config.CreatedAt = DateTime.Now;
+        config.UpdatedAt = DateTime.Now;
         
         var id = await _db.Insertable(config).ExecuteReturnIdentityAsync();
         config.Id = id;
@@ -46,7 +46,7 @@ public class SftpConfigRepository : ISftpConfigRepository
 
     public async Task<bool> UpdateAsync(SftpConfig config)
     {
-        config.UpdatedAt = DateTime.UtcNow;
+        config.UpdatedAt = DateTime.Now;
         
         var result = await _db.Updateable(config)
             .Where(s => s.Id == config.Id)

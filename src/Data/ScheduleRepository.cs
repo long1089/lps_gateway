@@ -44,8 +44,8 @@ public class ScheduleRepository : IScheduleRepository
 
     public async Task<Schedule> CreateAsync(Schedule schedule)
     {
-        schedule.CreatedAt = DateTime.UtcNow;
-        schedule.UpdatedAt = DateTime.UtcNow;
+        schedule.CreatedAt = DateTime.Now;
+        schedule.UpdatedAt = DateTime.Now;
         
         var id = await _db.Insertable(schedule).ExecuteReturnIdentityAsync();
         schedule.Id = id;
@@ -54,7 +54,7 @@ public class ScheduleRepository : IScheduleRepository
 
     public async Task<bool> UpdateAsync(Schedule schedule)
     {
-        schedule.UpdatedAt = DateTime.UtcNow;
+        schedule.UpdatedAt = DateTime.Now;
         
         var result = await _db.Updateable(schedule)
             .Where(s => s.Id == schedule.Id)

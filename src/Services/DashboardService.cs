@@ -26,7 +26,7 @@ public class DashboardService : IDashboardService
         _fileRecordRepository = fileRecordRepository;
         _logger = logger;
         _statusBroadcaster = statusBroadcaster;
-        _startTime = DateTime.UtcNow;
+        _startTime = DateTime.Now;
     }
 
     /// <inheritdoc/>
@@ -58,7 +58,7 @@ public class DashboardService : IDashboardService
     {
         try
         {
-            var today = DateTime.UtcNow.Date;
+            var today = DateTime.Now.Date;
             var tomorrow = today.AddDays(1);
 
             var totalFiles = await _db.Queryable<FileRecord>().CountAsync();
@@ -85,7 +85,7 @@ public class DashboardService : IDashboardService
                 PendingTasks = pendingTasks,
                 InProgressTasks = inProgressTasks,
                 FailedTasks = failedTasks,
-                UptimeSeconds = (long)(DateTime.UtcNow - _startTime).TotalSeconds
+                UptimeSeconds = (long)(DateTime.Now - _startTime).TotalSeconds
             };
         }
         catch (Exception ex)
@@ -172,7 +172,7 @@ public class DashboardService : IDashboardService
                 {
                     Type = "磁盘空间",
                     Message = $"磁盘使用率已达到 {diskUsage.UsagePercent:F1}%，请及时清理",
-                    Timestamp = DateTime.UtcNow,
+                    Timestamp = DateTime.Now,
                     Severity = "critical"
                 });
             }
@@ -182,7 +182,7 @@ public class DashboardService : IDashboardService
                 {
                     Type = "磁盘空间",
                     Message = $"磁盘使用率已达到 {diskUsage.UsagePercent:F1}%",
-                    Timestamp = DateTime.UtcNow,
+                    Timestamp = DateTime.Now,
                     Severity = "warning"
                 });
             }

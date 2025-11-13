@@ -42,7 +42,7 @@ public class M6IntegrationTests
             await Task.Delay(100);
             
             // Act & Assert - 时间同步
-            var timeSyncResult = await master.SendTimeSyncAsync(DateTime.UtcNow);
+            var timeSyncResult = await master.SendTimeSyncAsync(DateTime.Now);
             Assert.True(timeSyncResult);
             await Task.Delay(100);
             
@@ -215,9 +215,9 @@ public class M6IntegrationTests
         var master = new Iec102Master("localhost", 39999, 0xFFFF, mockLogger.Object); // 不存在的服务
         
         // Act
-        var startTime = DateTime.UtcNow;
+        var startTime = DateTime.Now;
         var connected = await master.ConnectAsync();
-        var elapsed = DateTime.UtcNow - startTime;
+        var elapsed = DateTime.Now - startTime;
         
         // Assert - 应该快速失败（不超过5秒）
         Assert.False(connected);

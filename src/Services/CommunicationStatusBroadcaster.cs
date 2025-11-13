@@ -40,7 +40,7 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
         lock (_lock)
         {
             _activeConnections.Add(endpoint);
-            _lastActivityTime = DateTime.UtcNow;
+            _lastActivityTime = DateTime.Now;
             _logger.LogInformation("主站已连接: {Endpoint}, 活跃连接数: {Count}", endpoint, _activeConnections.Count);
         }
 
@@ -56,7 +56,7 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
         lock (_lock)
         {
             _activeConnections.Remove(endpoint);
-            _lastActivityTime = DateTime.UtcNow;
+            _lastActivityTime = DateTime.Now;
             _logger.LogInformation("主站已断开: {Endpoint}, 活跃连接数: {Count}", endpoint, _activeConnections.Count);
         }
 
@@ -101,7 +101,7 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
     {
         try
         {
-            var today = DateTime.UtcNow.Date;
+            var today = DateTime.Now.Date;
             var tomorrow = today.AddDays(1);
 
             int todayTasks = 0;

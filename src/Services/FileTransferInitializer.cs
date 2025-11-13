@@ -93,7 +93,7 @@ public class FileTransferInitializer : IFileTransferInitializer
                     Status = "pending",
                     Progress = 0,
                     SentSegments = 0,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.Now
                 };
                 
                 try

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LpsGateway.Data;
 using LpsGateway.Models;
 using LpsGateway.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -15,11 +16,13 @@ public class AccountController : Controller
 {
     private readonly IAuthService _authService;
     private readonly ILogger<AccountController> _logger;
+    private readonly IAuditLogRepository _auditLogRepository;
 
-    public AccountController(IAuthService authService, ILogger<AccountController> logger)
+    public AccountController(IAuthService authService, ILogger<AccountController> logger, IAuditLogRepository auditLogRepository)
     {
         _authService = authService;
         _logger = logger;
+        _auditLogRepository = auditLogRepository;
     }
 
     /// <summary>
@@ -96,6 +99,7 @@ public class AccountController : Controller
     [Authorize]
     public async Task<IActionResult> Logout()
     {
+        await _auditLogRepository.AddLogAsync("LOGOUT");
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         _logger.LogInformation("用户退出登录");
         return RedirectToAction("Index", "Home");

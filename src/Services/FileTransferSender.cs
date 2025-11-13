@@ -53,7 +53,7 @@ public class FileTransferSender : IFileTransferSender
             FileRecordId = fileRecordId,
             SessionId = sessionEndpoint,
             Status = "pending",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         await _db.Insertable(task).ExecuteCommandAsync(cancellationToken);
@@ -116,7 +116,7 @@ public class FileTransferSender : IFileTransferSender
 
         // 更新任务状态为 in_progress
         task.Status = "in_progress";
-        task.StartedAt = DateTime.UtcNow;
+        task.StartedAt = DateTime.Now;
         await _db.Updateable(task).ExecuteCommandAsync(cancellationToken);
 
         // 异步执行传输（非阻塞）
@@ -331,7 +331,7 @@ public class FileTransferSender : IFileTransferSender
 
             // 7. 标记完成
             task.Status = "completed";
-            task.CompletedAt = DateTime.UtcNow;
+            task.CompletedAt = DateTime.Now;
             await _db.Updateable(task).ExecuteCommandAsync(cancellationToken);
 
             _logger.LogInformation(
@@ -402,7 +402,7 @@ public class FileTransferSender : IFileTransferSender
             task.ErrorMessage = errorMessage;
 
         if (status == "completed")
-            task.CompletedAt = DateTime.UtcNow;
+            task.CompletedAt = DateTime.Now;
 
         await _db.Updateable(task).ExecuteCommandAsync(cancellationToken);
     }

@@ -59,7 +59,7 @@ public class RetentionWorkerHostedService : BackgroundService
 
         try
         {
-            var now = DateTime.UtcNow;
+            var now = DateTime.Now;
 
             // 查找所有过期的文件记录
             var expiredFiles = await db.Queryable<Data.Models.FileRecord>()

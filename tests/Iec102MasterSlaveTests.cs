@@ -168,7 +168,7 @@ public class Iec102MasterSlaveTests
         // Act
         await master.ResetLinkAsync();
         await Task.Delay(100);
-        await master.SendTimeSyncAsync(DateTime.UtcNow);
+        await master.SendTimeSyncAsync(DateTime.Now);
         await Task.Delay(200);
         
         // Cleanup

@@ -1,3 +1,4 @@
+using LpsGateway.Data;
 using LpsGateway.Data.Models;
 using SqlSugar;
 
@@ -10,11 +11,15 @@ public class AuthService : IAuthService
 {
     private readonly ISqlSugarClient _db;
     private readonly ILogger<AuthService> _logger;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IAuditLogRepository _auditLogRepository;
 
-    public AuthService(ISqlSugarClient db, ILogger<AuthService> logger)
+    public AuthService(ISqlSugarClient db, ILogger<AuthService> logger,IHttpContextAccessor httpContextAccessor,IAuditLogRepository auditLogRepository)
     {
         _db = db;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
+        _auditLogRepository = auditLogRepository;
     }
 
     public async Task<(bool Success, string? Token, User? User)> LoginAsync(string username, string password)
@@ -49,7 +54,9 @@ public class AuthService : IAuthService
             }
 
             _logger.LogInformation("用户登录成功: {Username}", sanitizedUsername);
-            
+
+            await _auditLogRepository.AddLogAsync("LOGIN", user.Id);
+
             // MVC模式不需要返回token，返回null即可
             return (true, null, user);
         }

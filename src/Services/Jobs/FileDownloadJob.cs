@@ -97,11 +97,11 @@ public class FileDownloadJob : IJob
                             OriginalFilename = fileName,
                             StoragePath = localPath,
                             FileSize = fileInfo.Exists ? fileInfo.Length : 0,
-                            DownloadTime = DateTime.UtcNow,
+                            DownloadTime = DateTime.Now,
                             Status = "downloaded",
                             ProcessSessionId = null, // 初始为空，等待会话处理
-                            CreatedAt = DateTime.UtcNow,
-                            UpdatedAt = DateTime.UtcNow
+                            CreatedAt = DateTime.Now,
+                            UpdatedAt = DateTime.Now
                         };
                         
                         var fileRecordId = await _fileRecordRepository.CreateAsync(fileRecord);

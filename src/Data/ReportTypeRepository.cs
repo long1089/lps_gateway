@@ -43,8 +43,8 @@ public class ReportTypeRepository : IReportTypeRepository
 
     public async Task<ReportType> CreateAsync(ReportType reportType)
     {
-        reportType.CreatedAt = DateTime.UtcNow;
-        reportType.UpdatedAt = DateTime.UtcNow;
+        reportType.CreatedAt = DateTime.Now;
+        reportType.UpdatedAt = DateTime.Now;
         
         var id = await _db.Insertable(reportType).ExecuteReturnIdentityAsync();
         reportType.Id = id;
@@ -53,7 +53,7 @@ public class ReportTypeRepository : IReportTypeRepository
 
     public async Task<bool> UpdateAsync(ReportType reportType)
     {
-        reportType.UpdatedAt = DateTime.UtcNow;
+        reportType.UpdatedAt = DateTime.Now;
         
         var result = await _db.Updateable(reportType)
             .Where(r => r.Id == reportType.Id)

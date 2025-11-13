@@ -24,12 +24,12 @@ public class AuditLogsController : Controller
     /// <summary>
     /// 审计日志列表页
     /// </summary>
-    public async Task<IActionResult> Index(string? action = null, int count = 100)
+    public async Task<IActionResult> Index(string? act = null, int count = 100)
     {
         try
         {
-            var logs = await _auditLogRepository.GetRecentAsync(count, null, action);
-            ViewBag.Action = action;
+            var logs = await _auditLogRepository.GetRecentAsync(count, null, act);
+            ViewBag.Act = act;
             ViewBag.Count = count;
             return View(logs);
         }
@@ -48,7 +48,7 @@ public class AuditLogsController : Controller
     {
         try
         {
-            var endDate = DateTime.UtcNow;
+            var endDate = DateTime.Now;
             var startDate = endDate.AddDays(-30);
             
             var actionCounts = await _auditLogRepository.GetActionCountsAsync(startDate, endDate);

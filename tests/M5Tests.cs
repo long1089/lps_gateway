@@ -116,7 +116,7 @@ public class M5Tests
             Action = "Login",
             Resource = "System",
             IpAddress = "192.168.1.1",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         var mockInsertable = new Mock<IInsertable<AuditLog>>();
@@ -148,7 +148,7 @@ public class M5Tests
             Resource = "System",
             Details = "{\"key\":\"value\"}",
             IpAddress = "192.168.1.1",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         // Assert
@@ -172,7 +172,7 @@ public class M5Tests
         {
             Type = "Test",
             Message = "Test message",
-            Timestamp = DateTime.UtcNow
+            Timestamp = DateTime.Now
         };
 
         // Assert
@@ -183,7 +183,7 @@ public class M5Tests
     public void FileDownloadRecordModel_PropertiesSetCorrectly()
     {
         // Arrange
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
         var model = new FileDownloadRecordModel
         {
             Id = 1,
@@ -217,7 +217,7 @@ public class M5Tests
             Progress = 50,
             TotalSegments = 10,
             SentSegments = 5,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         // Assert

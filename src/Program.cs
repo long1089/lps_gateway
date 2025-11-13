@@ -1,9 +1,11 @@
-using Microsoft.AspNetCore.Authentication.Cookies;
-using SqlSugar;
 using LpsGateway.Data;
-using LpsGateway.Services;
-using LpsGateway.Hubs;
+using LpsGateway.Data.Models;
 using LpsGateway.Extensions;
+using LpsGateway.Hubs;
+using LpsGateway.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Org.BouncyCastle.Asn1.X509;
+using SqlSugar;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,9 +60,13 @@ StaticConfig.CompleteInsertableFunc =
     StaticConfig.CompleteUpdateableFunc =
         StaticConfig.CompleteDeleteableFunc = it => //it是具体的对象Updateable<T>等是个object
         {
+            if (it.GetType().GenericTypeArguments[0] == typeof(AuditLog))
+            {
+                return;
+            }
             //反射的方法可能多个就需要用GetMethods().Where
             var method = it.GetType().GetMethod("EnableDiffLogEvent");
-            method?.Invoke(it, new object[] {null});
+            method?.Invoke(it, new object[] { null });
 
             //技巧：
             //可以定义一个接口只要是这个接口的才走这个逻辑

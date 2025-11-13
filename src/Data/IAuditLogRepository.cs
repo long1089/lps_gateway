@@ -1,3 +1,5 @@
+using LpsGateway.Data.Models;
+
 namespace LpsGateway.Data;
 
 /// <summary>
@@ -27,4 +29,14 @@ public interface IAuditLogRepository
     /// 统计指定时间范围内的审计日志数量（按操作分组）
     /// </summary>
     Task<Dictionary<string, int>> GetActionCountsAsync(DateTime startDate, DateTime endDate);
+
+    /// <summary>
+    /// 添加审计日志
+    /// </summary>
+    /// <param name="action"></param>
+    /// <param name="userId"></param>
+    /// <param name="resource"></param>
+    /// <param name="fieldChange"></param>
+    /// <returns></returns>
+    Task AddLogAsync(string action, int? userId = null, string? resource = null, AuditLog.AuditLogFieldChange? fieldChange = null);
 }
