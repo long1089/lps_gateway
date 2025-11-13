@@ -230,7 +230,7 @@ COMMENT ON COLUMN file_transfer_tasks.status IS '任务状态 (pending/in_progre
 
 -- 插入默认管理员用户 (密码: admin123)
 INSERT INTO users (username, password_hash, role, enabled)
-SELECT 'admin', '$2a$11$3eqvjhs.vVhKqmv8f.6ry.nKp6WdqLB5bSF1GXoF6H8BH.pX/9O7q', 'Admin', TRUE
+SELECT 'admin', '$2a$11$d9q9rheprqC42ZqX8gfqNO0gx11QUGZpventBVMa/T2JPRBMSCxHy', 'Admin', TRUE
 WHERE NOT EXISTS(
         SELECT 1 FROM users WHERE username = 'admin'
     );
