@@ -13,16 +13,19 @@ public class DashboardService : IDashboardService
     private readonly ISqlSugarClient _db;
     private readonly IFileRecordRepository _fileRecordRepository;
     private readonly ILogger<DashboardService> _logger;
+    private readonly ICommunicationStatusBroadcaster _statusBroadcaster;
     private readonly DateTime _startTime;
 
     public DashboardService(
         ISqlSugarClient db,
         IFileRecordRepository fileRecordRepository,
-        ILogger<DashboardService> logger)
+        ILogger<DashboardService> logger,
+        ICommunicationStatusBroadcaster statusBroadcaster)
     {
         _db = db;
         _fileRecordRepository = fileRecordRepository;
         _logger = logger;
+        _statusBroadcaster = statusBroadcaster;
         _startTime = DateTime.UtcNow;
     }
 
@@ -241,29 +244,8 @@ public class DashboardService : IDashboardService
     {
         try
         {
-            var today = DateTime.UtcNow.Date;
-            var tomorrow = today.AddDays(1);
-
-            // 注意：这里使用简单的方法，实际应该从 Iec102Slave/Master 服务获取实时状态
-            // 目前只统计任务数量作为活动指标
-            var todayTasks = await _db.Queryable<FileTransferTask>()
-                .Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow)
-                .CountAsync();
-
-            var lastActivity = await _db.Queryable<FileTransferTask>()
-                .OrderByDescending(t => t.CreatedAt)
-                .Select(t => t.CreatedAt)
-                .FirstAsync();
-
-            return new CommunicationStatusModel
-            {
-                SlaveIsRunning = true, // 需要从实际服务获取
-                MasterIsRunning = true, // 需要从实际服务获取
-                ActiveConnections = 0, // 需要从实际服务获取
-                TodayReceivedFrames = 0, // 需要从实际服务获取
-                TodaySentFrames = todayTasks, // 近似值
-                LastActivityTime = lastActivity
-            };
+            // 使用广播服务获取当前实时状态
+            return await _statusBroadcaster.GetCurrentStatusAsync();
         }
         catch (Exception ex)
         {

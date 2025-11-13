@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using SqlSugar;
 using LpsGateway.Data;
 using LpsGateway.Services;
+using LpsGateway.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,9 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // Add MVC services
 builder.Services.AddControllersWithViews();
+
+// Add SignalR
+builder.Services.AddSignalR();
 
 // 配置 Cookie 认证 (MVC模式)
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -64,6 +68,9 @@ builder.Services.AddScoped<IFileTransferInitializer, FileTransferInitializer>();
 // Register M5 services
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 
+// Register Communication Status Broadcaster as Singleton (shared state)
+builder.Services.AddSingleton<ICommunicationStatusBroadcaster, CommunicationStatusBroadcaster>();
+
 // Register M2 hosted service
 builder.Services.AddHostedService<LpsGateway.HostedServices.ScheduleManagerHostedService>();
 
@@ -108,5 +115,8 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+// 配置 SignalR Hub
+app.MapHub<CommunicationStatusHub>("/hubs/communicationStatus");
 
 app.Run();

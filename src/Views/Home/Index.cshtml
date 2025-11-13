@@ -113,27 +113,27 @@
                 <div class="row">
                     <div class="col-6">
                         <p>
-                            <strong>IEC-102 从站：</strong>
-                            <span class="badge bg-@(Model.CommunicationStatus.SlaveIsRunning ? "success" : "danger")">
-                                @(Model.CommunicationStatus.SlaveIsRunning ? "运行中" : "已停止")
-                            </span>
-                        </p>
-                        <p>
                             <strong>IEC-102 主站：</strong>
-                            <span class="badge bg-@(Model.CommunicationStatus.MasterIsRunning ? "success" : "danger")">
+                            <span id="masterStatus" class="badge bg-@(Model.CommunicationStatus.MasterIsRunning ? "success" : "danger")">
                                 @(Model.CommunicationStatus.MasterIsRunning ? "运行中" : "已停止")
                             </span>
                         </p>
                     </div>
                     <div class="col-6">
-                        <p><strong>活跃连接：</strong> @Model.CommunicationStatus.ActiveConnections</p>
-                        <p><strong>今日发送帧：</strong> @Model.CommunicationStatus.TodaySentFrames</p>
+                        <p><strong>活跃连接：</strong> <span id="activeConnections">@Model.CommunicationStatus.ActiveConnections</span></p>
+                        <p><strong>今日发送帧：</strong> <span id="todaySentFrames">@Model.CommunicationStatus.TodaySentFrames</span></p>
                     </div>
                 </div>
                 @if (Model.CommunicationStatus.LastActivityTime.HasValue)
                 {
-                    <p class="text-muted small mb-0">
+                    <p class="text-muted small mb-0" id="lastActivityTime">
                         最后活动: @Model.CommunicationStatus.LastActivityTime.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                    </p>
+                }
+                else
+                {
+                    <p class="text-muted small mb-0" id="lastActivityTime">
+                        最后活动: 暂无
                     </p>
                 }
             </div>
@@ -388,4 +388,77 @@ else
             _ => status
         };
     }
+}
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script>
+        // 建立 SignalR 连接
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/hubs/communicationStatus")
+            .withAutomaticReconnect()
+            .build();
+
+        // 接收通讯状态更新
+        connection.on("ReceiveStatusUpdate", function (status) {
+            console.log("收到通讯状态更新:", status);
+            
+            // 更新主站状态
+            const masterStatusElement = document.getElementById("masterStatus");
+            if (masterStatusElement) {
+                masterStatusElement.className = status.masterIsRunning ? "badge bg-success" : "badge bg-danger";
+                masterStatusElement.textContent = status.masterIsRunning ? "运行中" : "已停止";
+            }
+            
+            // 更新活跃连接数
+            const activeConnectionsElement = document.getElementById("activeConnections");
+            if (activeConnectionsElement) {
+                activeConnectionsElement.textContent = status.activeConnections;
+            }
+            
+            // 更新今日发送帧数
+            const todaySentFramesElement = document.getElementById("todaySentFrames");
+            if (todaySentFramesElement) {
+                todaySentFramesElement.textContent = status.todaySentFrames;
+            }
+            
+            // 更新最后活动时间
+            const lastActivityTimeElement = document.getElementById("lastActivityTime");
+            if (lastActivityTimeElement && status.lastActivityTime) {
+                const date = new Date(status.lastActivityTime);
+                const formattedDate = date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+                lastActivityTimeElement.textContent = "最后活动: " + formattedDate;
+            }
+        });
+
+        // 启动连接
+        connection.start()
+            .then(function () {
+                console.log("SignalR 连接已建立");
+            })
+            .catch(function (err) {
+                console.error("SignalR 连接失败:", err.toString());
+            });
+
+        // 监听连接状态变化
+        connection.onreconnecting((error) => {
+            console.log("SignalR 正在重新连接...", error);
+        });
+
+        connection.onreconnected((connectionId) => {
+            console.log("SignalR 已重新连接，连接ID:", connectionId);
+        });
+
+        connection.onclose((error) => {
+            console.log("SignalR 连接已关闭", error);
+        });
+    </script>
 }

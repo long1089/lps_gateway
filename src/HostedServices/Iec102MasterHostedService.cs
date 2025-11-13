@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using LpsGateway.Services;
 
 namespace LpsGateway.HostedServices;
 
@@ -17,17 +18,20 @@ public class Iec102MasterHostedService : IHostedService, IDisposable
     private readonly ILogger<Iec102MasterHostedService> _logger;
     private readonly Iec102MasterOptions _options;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ICommunicationStatusBroadcaster _statusBroadcaster;
     private Timer? _pollingTimer;
     
     public Iec102MasterHostedService(
         ILogger<Iec102MasterHostedService> logger,
         IOptions<Iec102MasterOptions> options,
         IServiceProvider serviceProvider,
-        ILoggerFactory loggerFactory)  // 添加 ILoggerFactory 参数
+        ILoggerFactory loggerFactory,
+        ICommunicationStatusBroadcaster statusBroadcaster)
     {
         _logger = logger;
         _options = options.Value;
         _serviceProvider = serviceProvider;
+        _statusBroadcaster = statusBroadcaster;
 
         // 使用 ILoggerFactory 创建正确类型的 logger
         var masterLogger = loggerFactory.CreateLogger<Lib60870.Iec102Master>();
@@ -50,11 +54,14 @@ public class Iec102MasterHostedService : IHostedService, IDisposable
         if (!_options.Enabled)
         {
             _logger.LogInformation("IEC-102 主站服务已禁用");
+            _statusBroadcaster.SetMasterRunningStatus(false);
             return;
         }
         
         _logger.LogInformation("启动 IEC-102 主站服务: Host={Host}:{Port}, StationAddress=0x{StationAddress:X4}", 
             _options.Host, _options.Port, _options.StationAddress);
+        
+        _statusBroadcaster.SetMasterRunningStatus(true);
         
         // 连接到从站
         var connected = await _master.ConnectAsync(cancellationToken);
@@ -84,6 +91,7 @@ public class Iec102MasterHostedService : IHostedService, IDisposable
     {
         _logger.LogInformation("停止 IEC-102 主站服务");
         
+        _statusBroadcaster.SetMasterRunningStatus(false);
         _pollingTimer?.Dispose();
         await _master.DisconnectAsync();
     }
