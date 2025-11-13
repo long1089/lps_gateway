@@ -50,18 +50,21 @@ public class Iec102SlaveHostedService : IHostedService
         if (!_options.Enabled)
         {
             _logger.LogInformation("IEC-102 从站服务已禁用");
+            _statusBroadcaster.SetSlaveRunningStatus(false);
             return;
         }
         
         _logger.LogInformation("启动 IEC-102 从站服务: Port={Port}, StationAddress=0x{StationAddress:X4}", 
             _options.Port, _options.StationAddress);
         
+        _statusBroadcaster.SetSlaveRunningStatus(true);
         await _slave.StartAsync(cancellationToken);
     }
     
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("停止 IEC-102 从站服务");
+        _statusBroadcaster.SetSlaveRunningStatus(false);
         await _slave.StopAsync();
     }
     

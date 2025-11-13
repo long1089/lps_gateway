@@ -54,14 +54,11 @@ public class Iec102MasterHostedService : IHostedService, IDisposable
         if (!_options.Enabled)
         {
             _logger.LogInformation("IEC-102 主站服务已禁用");
-            _statusBroadcaster.SetMasterRunningStatus(false);
             return;
         }
         
         _logger.LogInformation("启动 IEC-102 主站服务: Host={Host}:{Port}, StationAddress=0x{StationAddress:X4}", 
             _options.Host, _options.Port, _options.StationAddress);
-        
-        _statusBroadcaster.SetMasterRunningStatus(true);
         
         // 连接到从站
         var connected = await _master.ConnectAsync(cancellationToken);
@@ -91,7 +88,6 @@ public class Iec102MasterHostedService : IHostedService, IDisposable
     {
         _logger.LogInformation("停止 IEC-102 主站服务");
         
-        _statusBroadcaster.SetMasterRunningStatus(false);
         _pollingTimer?.Dispose();
         await _master.DisconnectAsync();
     }

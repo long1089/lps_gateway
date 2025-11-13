@@ -233,7 +233,7 @@ public class M5Tests
         var model = new CommunicationStatusModel();
 
         // Assert
-        Assert.False(model.MasterIsRunning);
+        Assert.False(model.SlaveIsRunning);
         Assert.Equal(0, model.ActiveConnections);
         Assert.Equal(0, model.TodaySentFrames);
         Assert.Null(model.LastActivityTime);

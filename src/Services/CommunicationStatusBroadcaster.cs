@@ -19,7 +19,7 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
     private readonly HashSet<string> _activeConnections = new();
     private readonly object _lock = new();
     private DateTime? _lastActivityTime;
-    private bool _masterIsRunning;
+    private bool _slaveIsRunning;
 
     public CommunicationStatusBroadcaster(
         IHubContext<CommunicationStatusHub> hubContext,
@@ -29,7 +29,7 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
         _hubContext = hubContext;
         _serviceProvider = serviceProvider;
         _logger = logger;
-        _masterIsRunning = false;
+        _slaveIsRunning = false;
     }
 
     /// <summary>
@@ -65,13 +65,13 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
     }
 
     /// <summary>
-    /// 设置主站运行状态
+    /// 设置从站（服务端）运行状态
     /// </summary>
-    public void SetMasterRunningStatus(bool isRunning)
+    public void SetSlaveRunningStatus(bool isRunning)
     {
         lock (_lock)
         {
-            _masterIsRunning = isRunning;
+            _slaveIsRunning = isRunning;
         }
 
         // 异步广播状态更新（不阻塞调用线程）
@@ -133,18 +133,18 @@ public class CommunicationStatusBroadcaster : ICommunicationStatusBroadcaster
 
             int activeConnections;
             DateTime? lastActivityFromMemory;
-            bool masterRunning;
+            bool slaveRunning;
             
             lock (_lock)
             {
                 activeConnections = _activeConnections.Count;
                 lastActivityFromMemory = _lastActivityTime;
-                masterRunning = _masterIsRunning;
+                slaveRunning = _slaveIsRunning;
             }
 
             return new CommunicationStatusModel
             {
-                MasterIsRunning = masterRunning,
+                SlaveIsRunning = slaveRunning,
                 ActiveConnections = activeConnections,
                 TodaySentFrames = todayTasks,
                 LastActivityTime = lastActivity ?? lastActivityFromMemory
