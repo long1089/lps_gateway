@@ -20,6 +20,7 @@ public class M5Tests
     private readonly Mock<IAuditLogRepository> _mockAuditLogRepo;
     private readonly Mock<ILogger<DashboardService>> _mockDashboardLogger;
     private readonly Mock<ILogger<AuditLogRepository>> _mockAuditLogger;
+    private readonly Mock<ICommunicationStatusBroadcaster> _mockStatusBroadcaster;
 
     public M5Tests()
     {
@@ -28,6 +29,7 @@ public class M5Tests
         _mockAuditLogRepo = new Mock<IAuditLogRepository>();
         _mockDashboardLogger = new Mock<ILogger<DashboardService>>();
         _mockAuditLogger = new Mock<ILogger<AuditLogRepository>>();
+        _mockStatusBroadcaster = new Mock<ICommunicationStatusBroadcaster>();
     }
 
     #region Dashboard Service Tests
@@ -36,7 +38,7 @@ public class M5Tests
     public async Task DashboardService_GetDiskUsage_ReturnsValidModel()
     {
         // Arrange
-        var service = new DashboardService(_mockDb.Object, _mockFileRecordRepo.Object, _mockDashboardLogger.Object);
+        var service = new DashboardService(_mockDb.Object, _mockFileRecordRepo.Object, _mockDashboardLogger.Object, _mockStatusBroadcaster.Object);
 
         // Act
         var result = await service.GetDiskUsageAsync();
@@ -231,10 +233,8 @@ public class M5Tests
         var model = new CommunicationStatusModel();
 
         // Assert
-        Assert.False(model.SlaveIsRunning);
         Assert.False(model.MasterIsRunning);
         Assert.Equal(0, model.ActiveConnections);
-        Assert.Equal(0, model.TodayReceivedFrames);
         Assert.Equal(0, model.TodaySentFrames);
         Assert.Null(model.LastActivityTime);
     }

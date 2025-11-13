@@ -14,16 +14,19 @@ public class Iec102SlaveHostedService : IHostedService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<Iec102SlaveHostedService> _logger;
     private readonly Iec102SlaveOptions _options;
+    private readonly ICommunicationStatusBroadcaster _statusBroadcaster;
     
     public Iec102SlaveHostedService(
         ILogger<Iec102SlaveHostedService> logger,
         IOptions<Iec102SlaveOptions> options,
         IServiceProvider serviceProvider,
-        ILoggerFactory loggerFactory)  // 添加 ILoggerFactory 参数
+        ILoggerFactory loggerFactory,
+        ICommunicationStatusBroadcaster statusBroadcaster)
     {
         _logger = logger;
         _options = options.Value;
         _serviceProvider = serviceProvider;
+        _statusBroadcaster = statusBroadcaster;
         
         // 使用 ILoggerFactory 创建正确类型的 logger
         var slaveLogger = loggerFactory.CreateLogger<Lib60870.Iec102Slave>();
@@ -65,12 +68,15 @@ public class Iec102SlaveHostedService : IHostedService
     private void OnClientConnected(object? sender, string endpoint)
     {
         _logger.LogInformation("主站已连接: {Endpoint}", endpoint);
-        // 不再在连接时自动初始化，而是在收到2级数据请求时处理
+        // 通知状态广播服务
+        _statusBroadcaster.RecordMasterConnection(endpoint);
     }
     
     private void OnClientDisconnected(object? sender, string endpoint)
     {
         _logger.LogInformation("主站已断开: {Endpoint}", endpoint);
+        // 通知状态广播服务
+        _statusBroadcaster.RecordMasterDisconnection(endpoint);
     }
     
     private void OnFrameReceived(object? sender, Lib60870.FrameReceivedEventArgs e)

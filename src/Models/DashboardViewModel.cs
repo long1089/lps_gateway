@@ -124,11 +124,6 @@ public class ErrorAlertModel
 public class CommunicationStatusModel
 {
     /// <summary>
-    /// IEC-102 从站状态
-    /// </summary>
-    public bool SlaveIsRunning { get; set; }
-
-    /// <summary>
     /// IEC-102 主站状态
     /// </summary>
     public bool MasterIsRunning { get; set; }
@@ -137,11 +132,6 @@ public class CommunicationStatusModel
     /// 活跃连接数
     /// </summary>
     public int ActiveConnections { get; set; }
-
-    /// <summary>
-    /// 今日接收帧数
-    /// </summary>
-    public int TodayReceivedFrames { get; set; }
 
     /// <summary>
     /// 今日发送帧数
