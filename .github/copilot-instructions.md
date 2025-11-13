@@ -15,6 +15,83 @@ LPS Gateway is an IEC-102 extended E-file reception, parsing, storage, and repor
 - **Encoding**: System.Text.Encoding.CodePages (v9.0.10) for GBK encoding support
 - **Testing**: xUnit with Moq
 
+## Database and SQL Compatibility
+
+### Database Version Requirements
+- **Primary Target**: OpenGauss (based on PostgreSQL 9.2)
+- **Also Compatible**: PostgreSQL 9.2+
+- **Development/Testing**: PostgreSQL 9.6+ or 15+ recommended
+
+### SQL Syntax Compatibility Guidelines
+
+**IMPORTANT**: All SQL code must be compatible with OpenGauss and PostgreSQL 9.2+. Avoid using newer PostgreSQL syntax features.
+
+#### Supported Syntax
+- ✅ `CREATE TABLE IF NOT EXISTS`
+- ✅ `ALTER TABLE table_name ADD COLUMN IF NOT EXISTS column_name type`
+- ✅ `ALTER TABLE table_name ALTER COLUMN column_name TYPE new_type`
+- ✅ `INSERT INTO ... SELECT ... WHERE NOT EXISTS(...)`
+- ✅ `COMMENT ON TABLE/COLUMN`
+- ✅ Standard SQL data types: `VARCHAR`, `INTEGER`, `BIGINT`, `BOOLEAN`, `TIMESTAMP`, `JSONB`, `TEXT`
+- ✅ `SERIAL` for auto-increment columns
+
+#### NOT Supported (OpenGauss/PostgreSQL 9.2)
+- ❌ `ALTER TABLE table_name DROP COLUMN IF EXISTS column_name` (added in PostgreSQL 9.6)
+- ❌ `CREATE INDEX IF NOT EXISTS` (added in PostgreSQL 9.5)
+- ❌ Advanced window functions from PostgreSQL 11+
+- ❌ `GENERATED` columns (added in PostgreSQL 12)
+
+#### Required Workarounds
+
+**Conditional DROP COLUMN** - Use DO block with information_schema:
+```sql
+-- ❌ NOT COMPATIBLE
+ALTER TABLE table_name DROP COLUMN IF EXISTS column_name;
+
+-- ✅ USE THIS INSTEAD
+DO $$ 
+BEGIN
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'your_table_name' 
+        AND column_name = 'your_column_name'
+    ) THEN
+        ALTER TABLE your_table_name DROP COLUMN your_column_name;
+    END IF;
+END $$;
+```
+
+**Conditional CREATE INDEX** - Check before creating:
+```sql
+-- ❌ NOT COMPATIBLE
+CREATE INDEX IF NOT EXISTS idx_name ON table_name (column_name);
+
+-- ✅ USE THIS INSTEAD
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes 
+        WHERE indexname = 'idx_name'
+    ) THEN
+        CREATE INDEX idx_name ON table_name (column_name);
+    END IF;
+END $$;
+```
+
+#### Testing SQL Compatibility
+Before committing database changes:
+1. Test on PostgreSQL 9.6 minimum (simulates OpenGauss environment)
+2. Verify all migrations work without errors
+3. Ensure idempotency - scripts can run multiple times safely
+4. Use standard SQL features, avoid PostgreSQL-specific extensions when possible
+
+#### Migration File Conventions
+- Name migrations with numeric prefix: `001_description.sql`, `002_description.sql`
+- Include rollback instructions in comments or README
+- Always test migrations on clean database
+- Document any OpenGauss-specific considerations
+
 ## Architecture
 
 The project follows a layered architecture:
@@ -252,9 +329,10 @@ System.Text.Encoding.RegisterProvider(System.Text.Encoding.CodePagesEncodingProv
 
 ### SqlSugarCore
 - Use `ISqlSugarClient` interface
-- Configure DbType as `DbType.PostgreSQL`
+- Configure DbType as `DbType.PostgreSQL` (compatible with OpenGauss)
 - Use transactions for multi-table operations
 - Log masked connection strings (hide passwords)
+- Follow SQL compatibility guidelines (see Database and SQL Compatibility section above)
 
 ### Authentication
 - Cookie-based authentication for MVC

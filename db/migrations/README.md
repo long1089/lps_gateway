@@ -79,8 +79,19 @@ UPDATE report_types SET path_template = '/your/path/template/{yyyy}/{MM}/{dd}' W
 If you need to rollback this migration:
 
 ```sql
--- Rollback script
-ALTER TABLE report_types DROP COLUMN IF EXISTS path_template;
+-- Rollback script (compatible with OpenGauss/older PostgreSQL)
+DO $$ 
+BEGIN
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'report_types' 
+        AND column_name = 'path_template'
+    ) THEN
+        ALTER TABLE report_types DROP COLUMN path_template;
+    END IF;
+END $$;
+
 ALTER TABLE sftp_configs ADD COLUMN IF NOT EXISTS base_path_template VARCHAR(500) NOT NULL DEFAULT '';
 ```
 
