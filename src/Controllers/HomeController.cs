@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using LpsGateway.Services;
 
 namespace LpsGateway.Controllers;
@@ -6,6 +7,7 @@ namespace LpsGateway.Controllers;
 /// <summary>
 /// 首页控制器
 /// </summary>
+[Authorize]
 public class HomeController : Controller
 {
     private readonly ILogger<HomeController> _logger;
