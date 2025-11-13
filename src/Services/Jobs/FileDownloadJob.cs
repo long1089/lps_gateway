@@ -61,13 +61,14 @@ public class FileDownloadJob : IJob
             
             _logger.LogInformation("发现 {Count} 个待下载文件", files.Count);
 
+            // 检查文件是否已下载（根据文件名和报表类型）
+            var existingRecord = await _fileRecordRepository.GetByStatusAndReportTypeAsync("downloaded", reportTypeId);
+
             // 下载文件
             foreach (var remoteFile in files)
             {
                 var fileName = Path.GetFileName(remoteFile);
                 
-                // 检查文件是否已下载（根据文件名和报表类型）
-                var existingRecord = await _fileRecordRepository.GetByStatusAndReportTypeAsync("downloaded", reportTypeId);
                 var alreadyDownloaded = existingRecord.Any(r => r.OriginalFilename == fileName);
                 
                 if (alreadyDownloaded)
