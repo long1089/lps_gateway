@@ -18,16 +18,17 @@ public class Iec102SlaveHostedService : IHostedService
     public Iec102SlaveHostedService(
         ILogger<Iec102SlaveHostedService> logger,
         IOptions<Iec102SlaveOptions> options,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        ILoggerFactory loggerFactory)  // 添加 ILoggerFactory 参数
     {
         _logger = logger;
         _options = options.Value;
         _serviceProvider = serviceProvider;
         
-        var slaveLogger = logger as ILogger<Lib60870.Iec102Slave> 
-            ?? throw new InvalidOperationException("Unable to create slave logger");
-            
-        _slave = new Lib60870.Iec102Slave(
+        // 使用 ILoggerFactory 创建正确类型的 logger
+        var slaveLogger = loggerFactory.CreateLogger<Lib60870.Iec102Slave>();
+        
+        _slave = new Lib60870.Iec102Slave(  
             _options.Port,
             _options.StationAddress,
             slaveLogger);

@@ -1,4 +1,4 @@
-using LpsGateway.Data;
+    using LpsGateway.Data;
 using LpsGateway.Data.Models;
 using LpsGateway.Services.Jobs;
 using Quartz;
@@ -45,17 +45,14 @@ public interface IScheduleManager
 /// </summary>
 public class ScheduleManager : IScheduleManager
 {
-    private readonly IScheduleRepository _scheduleRepository;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ScheduleManager> _logger;
     private IScheduler? _scheduler;
 
     public ScheduleManager(
-        IScheduleRepository scheduleRepository,
         IServiceProvider serviceProvider,
         ILogger<ScheduleManager> logger)
     {
-        _scheduleRepository = scheduleRepository;
         _serviceProvider = serviceProvider;
         _logger = logger;
     }
@@ -113,21 +110,27 @@ public class ScheduleManager : IScheduleManager
         // 清除现有作业
         await _scheduler.Clear();
 
-        // 加载所有启用的调度
-        var schedules = await _scheduleRepository.GetAllAsync();
-        var enabledSchedules = schedules.Where(s => s.Enabled).ToList();
-
-        _logger.LogInformation("找到 {Count} 个启用的调度", enabledSchedules.Count);
-
-        foreach (var schedule in enabledSchedules)
+        // 创建作用域来解析 Scoped 服务
+        using (var scope = _serviceProvider.CreateScope())
         {
-            try
+            var scheduleRepository = scope.ServiceProvider.GetRequiredService<IScheduleRepository>();
+            
+            // 加载所有启用的调度
+            var schedules = await scheduleRepository.GetAllAsync();
+            var enabledSchedules = schedules.Where(s => s.Enabled).ToList();
+
+            _logger.LogInformation("找到 {Count} 个启用的调度", enabledSchedules.Count);
+
+            foreach (var schedule in enabledSchedules)
             {
-                await AddScheduleJobAsync(schedule);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "添加调度失败: ScheduleId={ScheduleId}", schedule.Id);
+                try
+                {
+                    await AddScheduleJobAsync(schedule);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "添加调度失败: ScheduleId={ScheduleId}", schedule.Id);
+                }
             }
         }
 

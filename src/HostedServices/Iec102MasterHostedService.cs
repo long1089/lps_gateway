@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,18 +16,22 @@ public class Iec102MasterHostedService : IHostedService, IDisposable
     private readonly Lib60870.Iec102Master _master;
     private readonly ILogger<Iec102MasterHostedService> _logger;
     private readonly Iec102MasterOptions _options;
+    private readonly IServiceProvider _serviceProvider;
     private Timer? _pollingTimer;
     
     public Iec102MasterHostedService(
         ILogger<Iec102MasterHostedService> logger,
-        IOptions<Iec102MasterOptions> options)
+        IOptions<Iec102MasterOptions> options,
+        IServiceProvider serviceProvider,
+        ILoggerFactory loggerFactory)  // 添加 ILoggerFactory 参数
     {
         _logger = logger;
         _options = options.Value;
-        
-        var masterLogger = logger as ILogger<Lib60870.Iec102Master>
-            ?? throw new InvalidOperationException("Unable to create master logger");
-        
+        _serviceProvider = serviceProvider;
+
+        // 使用 ILoggerFactory 创建正确类型的 logger
+        var masterLogger = loggerFactory.CreateLogger<Lib60870.Iec102Master>();
+
         _master = new Lib60870.Iec102Master(
             _options.Host,
             _options.Port,
