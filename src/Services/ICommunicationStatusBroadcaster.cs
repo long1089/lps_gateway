@@ -23,9 +23,9 @@ public interface ICommunicationStatusBroadcaster
     void RecordMasterDisconnection(string endpoint);
 
     /// <summary>
-    /// 设置主站运行状态
+    /// 设置从站（服务端）运行状态
     /// </summary>
-    void SetMasterRunningStatus(bool isRunning);
+    void SetSlaveRunningStatus(bool isRunning);
 
     /// <summary>
     /// 获取当前通讯状态

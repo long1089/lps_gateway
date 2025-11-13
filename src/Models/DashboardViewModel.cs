@@ -124,9 +124,9 @@ public class ErrorAlertModel
 public class CommunicationStatusModel
 {
     /// <summary>
-    /// IEC-102 主站状态
+    /// IEC-102 从站（服务端）状态
     /// </summary>
-    public bool MasterIsRunning { get; set; }
+    public bool SlaveIsRunning { get; set; }
 
     /// <summary>
     /// 活跃连接数

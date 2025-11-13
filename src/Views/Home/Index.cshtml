@@ -113,9 +113,9 @@
                 <div class="row">
                     <div class="col-6">
                         <p>
-                            <strong>IEC-102 主站：</strong>
-                            <span id="masterStatus" class="badge bg-@(Model.CommunicationStatus.MasterIsRunning ? "success" : "danger")">
-                                @(Model.CommunicationStatus.MasterIsRunning ? "运行中" : "已停止")
+                            <strong>IEC-102 从站（服务端）：</strong>
+                            <span id="slaveStatus" class="badge bg-@(Model.CommunicationStatus.SlaveIsRunning ? "success" : "danger")">
+                                @(Model.CommunicationStatus.SlaveIsRunning ? "运行中" : "已停止")
                             </span>
                         </p>
                     </div>
@@ -403,11 +403,11 @@ else
         connection.on("ReceiveStatusUpdate", function (status) {
             console.log("收到通讯状态更新:", status);
             
-            // 更新主站状态
-            const masterStatusElement = document.getElementById("masterStatus");
-            if (masterStatusElement) {
-                masterStatusElement.className = status.masterIsRunning ? "badge bg-success" : "badge bg-danger";
-                masterStatusElement.textContent = status.masterIsRunning ? "运行中" : "已停止";
+            // 更新从站状态
+            const slaveStatusElement = document.getElementById("slaveStatus");
+            if (slaveStatusElement) {
+                slaveStatusElement.className = status.slaveIsRunning ? "badge bg-success" : "badge bg-danger";
+                slaveStatusElement.textContent = status.slaveIsRunning ? "运行中" : "已停止";
             }
             
             // 更新活跃连接数
