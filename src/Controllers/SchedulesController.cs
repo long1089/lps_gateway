@@ -33,6 +33,12 @@ public class SchedulesController : Controller
     public async Task<IActionResult> Index()
     {
         var items = await _repository.GetAllAsync();
+        
+        // 加载报表类型信息用于显示
+        var reportTypes = await _reportTypeRepository.GetAllAsync();
+        var reportTypeDict = reportTypes.ToDictionary(r => r.Id, r => r.Name);
+        ViewBag.ReportTypeNames = reportTypeDict;
+        
         return View(items);
     }
 
