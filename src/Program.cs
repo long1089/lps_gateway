@@ -3,6 +3,7 @@ using SqlSugar;
 using LpsGateway.Data;
 using LpsGateway.Services;
 using LpsGateway.Hubs;
+using LpsGateway.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +34,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 
 builder.Services.AddAuthorization();
 
+// 注册 IHttpContextAccessor（获取当前用户必需，.NET 8 已默认注册，显式写更稳妥）
+builder.Services.AddHttpContextAccessor();
+
 // Configure SqlSugarCore
 builder.Services.AddScoped<ISqlSugarClient>(provider =>
 {
@@ -44,8 +48,26 @@ builder.Services.AddScoped<ISqlSugarClient>(provider =>
         IsAutoCloseConnection = true,
         InitKeyType = InitKeyType.Attribute
     });
+    var httpContextAccessor = provider.GetRequiredService<IHttpContextAccessor>();
+    db.EnabledAuditLog(httpContextAccessor);
     return db;
 });
+
+// Configure SqlSugar Insertable/Updateable/Deleteable auto call EnableDiffLogEvent method
+StaticConfig.CompleteInsertableFunc =
+    StaticConfig.CompleteUpdateableFunc =
+        StaticConfig.CompleteDeleteableFunc = it => //it是具体的对象Updateable<T>等是个object
+        {
+            //反射的方法可能多个就需要用GetMethods().Where
+            var method = it.GetType().GetMethod("EnableDiffLogEvent");
+            method?.Invoke(it, new object[] {null});
+
+            //技巧：
+            //可以定义一个接口只要是这个接口的才走这个逻辑
+            //if(db.GetType().GenericTypeArguments[0].GetInterfaces().Any(it=>it==typeof(IDiff))
+            //可以根据类型写if
+            //if(x.GetType().GenericTypeArguments[0] = typeof(Order)) {   }
+        };
 
 // Register M1 repositories
 builder.Services.AddScoped<IReportTypeRepository, ReportTypeRepository>();

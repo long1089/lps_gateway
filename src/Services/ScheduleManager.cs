@@ -1,10 +1,11 @@
-    using LpsGateway.Data;
+using LpsGateway.Data;
 using LpsGateway.Data.Models;
 using LpsGateway.Services.Jobs;
 using Quartz;
 using Quartz.Impl;
 using Quartz.Spi;
 using System.Text.Json;
+using System.Collections.Concurrent;
 
 namespace LpsGateway.Services;
 
@@ -279,6 +280,7 @@ public class ScheduleManager : IScheduleManager
     private class JobFactory : IJobFactory
     {
         private readonly IServiceProvider _serviceProvider;
+        private readonly ConcurrentDictionary<IJob, IServiceScope> _scopes = new();
 
         public JobFactory(IServiceProvider serviceProvider)
         {
@@ -287,13 +289,19 @@ public class ScheduleManager : IScheduleManager
 
         public IJob NewJob(TriggerFiredBundle bundle, IScheduler scheduler)
         {
-            return _serviceProvider.GetRequiredService(bundle.JobDetail.JobType) as IJob
+            var scope = _serviceProvider.CreateScope();
+            var job = scope.ServiceProvider.GetRequiredService(bundle.JobDetail.JobType) as IJob
                 ?? throw new InvalidOperationException($"无法创建作业实例: {bundle.JobDetail.JobType}");
+            _scopes.TryAdd(job, scope);
+            return job;
         }
 
         public void ReturnJob(IJob job)
         {
-            // 不需要处理，由DI容器管理生命周期
+            if (_scopes.TryRemove(job, out var scope))
+            {
+                scope.Dispose();
+            }
         }
     }
 }
