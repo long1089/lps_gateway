@@ -52,7 +52,7 @@ COMMENT ON TABLE audit_logs IS '操作审计日志';
 -- 报表类型配置表
 CREATE TABLE IF NOT EXISTS report_types (
     id SERIAL PRIMARY KEY,
-    code VARCHAR(20) NOT NULL UNIQUE,
+    code VARCHAR(100) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     description TEXT,
     default_sftp_config_id INTEGER,
@@ -66,7 +66,7 @@ CREATE INDEX idx_report_types_code ON report_types(code);
 CREATE INDEX idx_report_types_enabled ON report_types(enabled);
 
 COMMENT ON TABLE report_types IS '报表类型配置';
-COMMENT ON COLUMN report_types.code IS '报表类型编码';
+COMMENT ON COLUMN report_types.code IS '报表类型编码（最大100字符）';
 COMMENT ON COLUMN report_types.name IS '报表类型名称';
 COMMENT ON COLUMN report_types.default_sftp_config_id IS '默认SFTP配置ID';
 COMMENT ON COLUMN report_types.path_template IS '下载路径模板，支持 {yyyy}/{MM}/{dd}/{HH}/{mm}';
@@ -253,4 +253,114 @@ INSERT INTO report_types (code, name, description, enabled)
 SELECT 'MONTHLY_SUMMARY', '月度汇总报表', '月度统计汇总报表', TRUE
 WHERE NOT EXISTS(
         SELECT 1 FROM report_types WHERE code = 'MONTHLY_SUMMARY'
+    );
+
+-- 风电场相关报表类型
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_FARM_INFO', '风电场基础信息表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_FARM_INFO'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_FARM_UNIT_INFO', '风电机组信息表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_FARM_UNIT_INFO'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_FARM_UNIT_RUN_STATE', '风机运行表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_FARM_UNIT_RUN_STATE'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_FARM_RUN_CAP', '单风场所有风机运行表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_FARM_RUN_CAP'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_WIND_TOWER_INFO', '测风塔信息表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_WIND_TOWER_INFO'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_FIVE_WIND_TOWER', '测风塔采集数据表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_FIVE_WIND_TOWER'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_DQ_RESULT_UP', '场站上报短期预测', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_DQ_RESULT_UP'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_CDQ_RESULT_UP', '场站上报超短期预测', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_CDQ_RESULT_UP'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_DQ_PLAN_UP', '场站上报短期计划', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_DQ_PLAN_UP'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_NWP_UP', '场站上报天气预报', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_NWP_UP'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_OTHER_UP', '场站上报其他信息', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_OTHER_UP'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_FIF_THEORY_POWER', '场站上报理论功率', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_FIF_THEORY_POWER'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EFJ_REALTIME', '风电场实时数据', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EFJ_REALTIME'
+    );
+
+-- 光伏电站相关报表类型
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EGF_GF_INFO', '光伏电站基础信息表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EGF_GF_INFO'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EGF_GF_QXZ_INFO', '光伏气象站信息表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EGF_GF_QXZ_INFO'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EGF_GF_UNIT_INFO', '光伏逆变器信息表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EGF_GF_UNIT_INFO'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EGF_GF_UNIT_RUN_STATE', '逆变器运行表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EGF_GF_UNIT_RUN_STATE'
+    );
+
+INSERT INTO report_types (code, name, enabled)
+SELECT 'EGF_FIVE_GF_QXZ', '气象站采集数据表', TRUE
+WHERE NOT EXISTS(
+        SELECT 1 FROM report_types WHERE code = 'EGF_FIVE_GF_QXZ'
     );

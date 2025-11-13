@@ -17,7 +17,7 @@ public class ReportType
     /// <summary>
     /// 报表类型编码
     /// </summary>
-    [SugarColumn(Length = 20, IsNullable = false)]
+    [SugarColumn(Length = 100, IsNullable = false)]
     public string Code { get; set; } = string.Empty;
 
     /// <summary>
