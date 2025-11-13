@@ -1,0 +1,140 @@
+@model IEnumerable<Schedule>
+@{
+    ViewData["Title"] = "调度配置管理";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>调度配置管理</h2>
+    @if (User.IsInRole("Admin"))
+    {
+        <a asp-action="Create" class="btn btn-primary">创建新调度配置</a>
+    }
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>报表类型</th>
+                    <th>调度类型</th>
+                    <th>时间配置</th>
+                    <th>时区</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <th>操作</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model)
+                {
+                    <tr>
+                        <td>@item.Id</td>
+                        <td>
+                            @if (ViewBag.ReportTypeNames != null)
+                            {
+                                var reportTypeNames = ViewBag.ReportTypeNames as Dictionary<int, string>;
+                                if (reportTypeNames != null && reportTypeNames.ContainsKey(item.ReportTypeId))
+                                {
+                                    @reportTypeNames[item.ReportTypeId]
+                                }
+                                else
+                                {
+                                    <span class="text-muted">未知报表类型 (@item.ReportTypeId)</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">报表类型 ID: @item.ReportTypeId</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.ScheduleType == "daily")
+                            {
+                                <span class="badge bg-info">每日</span>
+                            }
+                            else if (item.ScheduleType == "monthly")
+                            {
+                                <span class="badge bg-primary">每月</span>
+                            }
+                            else if (item.ScheduleType == "cron")
+                            {
+                                <span class="badge bg-secondary">Cron</span>
+                            }
+                            else
+                            {
+                                <span>@item.ScheduleType</span>
+                            }
+                        </td>
+                        <td>
+                            @if (item.ScheduleType == "cron")
+                            {
+                                <code>@item.CronExpression</code>
+                            }
+                            else if (!string.IsNullOrEmpty(item.Times))
+                            {
+                                <small>时间点: @item.Times</small>
+                                if (!string.IsNullOrEmpty(item.MonthDays))
+                                {
+                                    <br/><small>日期: @item.MonthDays</small>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">未配置</span>
+                            }
+                        </td>
+                        <td>@item.Timezone</td>
+                        <td>
+                            @if (item.Enabled)
+                            {
+                                <span class="badge bg-success">启用</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">禁用</span>
+                            }
+                        </td>
+                        <td>@item.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        @if (User.IsInRole("Admin"))
+                        {
+                            <td>
+                                <a asp-action="Edit" asp-route-id="@item.Id" class="btn btn-sm btn-warning">编辑</a>
+                                <form asp-action="Delete" asp-route-id="@item.Id" method="post" class="d-inline"
+                                      onsubmit="return confirm('确定要删除此调度配置吗？');">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-sm btn-danger">删除</button>
+                                </form>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+        
+        @if (!Model.Any())
+        {
+            <p class="text-center text-muted my-4">暂无调度配置</p>
+        }
+    </div>
+</div>

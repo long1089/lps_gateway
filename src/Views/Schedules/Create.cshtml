@@ -1,0 +1,181 @@
+@model ScheduleDto
+@{
+    ViewData["Title"] = "创建调度配置";
+}
+
+<h2>创建调度配置</h2>
+
+<div class="row">
+    <div class="col-md-8">
+        <form asp-action="Create" method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            
+            <div class="mb-3">
+                <label asp-for="ReportTypeId" class="form-label">报表类型</label>
+                <select asp-for="ReportTypeId" class="form-select">
+                    <option value="">-- 请选择报表类型 --</option>
+                    @if (ViewBag.ReportTypes != null)
+                    {
+                        var reportTypes = ViewBag.ReportTypes as List<LpsGateway.Data.Models.ReportType>;
+                        if (reportTypes != null)
+                        {
+                            foreach (var type in reportTypes)
+                            {
+                                <option value="@type.Id">@type.Name (@type.Code)</option>
+                            }
+                        }
+                    }
+                </select>
+                <span asp-validation-for="ReportTypeId" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3">
+                <label asp-for="ScheduleType" class="form-label">调度类型</label>
+                <select asp-for="ScheduleType" class="form-select" id="scheduleTypeSelect">
+                    <option value="">-- 请选择调度类型 --</option>
+                    <option value="daily">每日调度</option>
+                    <option value="monthly">每月调度</option>
+                    <option value="cron">Cron表达式</option>
+                </select>
+                <span asp-validation-for="ScheduleType" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3" id="timesField">
+                <label class="form-label">时间点（每天执行的时间）</label>
+                <div id="timesList">
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control time-input" placeholder="HH:mm (例如: 08:00)" />
+                        <button type="button" class="btn btn-outline-danger remove-time" onclick="removeTime(this)">删除</button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="addTime()">添加时间点</button>
+                <div class="form-text">输入时间格式: HH:mm (24小时制，例如: 08:00, 14:30)</div>
+            </div>
+            
+            <div class="mb-3" id="monthDaysField" style="display: none;">
+                <label class="form-label">月份日期（每月执行的日期）</label>
+                <input type="text" id="monthDaysInput" class="form-control" placeholder="例如: 1,10,20 (逗号分隔)" />
+                <div class="form-text">输入1-31之间的日期，用逗号分隔。例如: 1,10,20 表示每月1号、10号、20号执行</div>
+            </div>
+            
+            <div class="mb-3" id="cronField" style="display: none;">
+                <label asp-for="CronExpression" class="form-label">Cron表达式</label>
+                <input asp-for="CronExpression" class="form-control" placeholder="0 0 * * * ?" />
+                <div class="form-text">
+                    Quartz Cron表达式格式：秒 分 时 日 月 周 [年]<br/>
+                    示例：0 0 8 * * ? - 每天8点执行<br/>
+                    示例：0 0 8,14 * * ? - 每天8点和14点执行<br/>
+                    示例：0 0 8 1 * ? - 每月1号8点执行
+                </div>
+                <span asp-validation-for="CronExpression" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3">
+                <label asp-for="Timezone" class="form-label">时区</label>
+                <select asp-for="Timezone" class="form-select">
+                    <option value="UTC">UTC (协调世界时)</option>
+                    <option value="Asia/Shanghai" selected>Asia/Shanghai (中国标准时间)</option>
+                    <option value="America/New_York">America/New_York (美东时间)</option>
+                    <option value="Europe/London">Europe/London (伦敦时间)</option>
+                </select>
+                <span asp-validation-for="Timezone" class="text-danger"></span>
+            </div>
+            
+            <div class="mb-3 form-check">
+                <input asp-for="Enabled" class="form-check-input" />
+                <label asp-for="Enabled" class="form-check-label">启用</label>
+            </div>
+            
+            <div class="mb-3">
+                <button type="submit" class="btn btn-primary">创建</button>
+                <a asp-action="Index" class="btn btn-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        // 根据调度类型显示/隐藏相关字段
+        document.getElementById('scheduleTypeSelect').addEventListener('change', function() {
+            const scheduleType = this.value;
+            const timesField = document.getElementById('timesField');
+            const monthDaysField = document.getElementById('monthDaysField');
+            const cronField = document.getElementById('cronField');
+            
+            // 隐藏所有字段
+            timesField.style.display = 'none';
+            monthDaysField.style.display = 'none';
+            cronField.style.display = 'none';
+            
+            // 根据类型显示相应字段
+            if (scheduleType === 'daily') {
+                timesField.style.display = 'block';
+            } else if (scheduleType === 'monthly') {
+                timesField.style.display = 'block';
+                monthDaysField.style.display = 'block';
+            } else if (scheduleType === 'cron') {
+                cronField.style.display = 'block';
+            }
+        });
+        
+        // 添加时间点
+        function addTime() {
+            const timesList = document.getElementById('timesList');
+            const div = document.createElement('div');
+            div.className = 'input-group mb-2';
+            div.innerHTML = '<input type="text" class="form-control time-input" placeholder="HH:mm (例如: 08:00)" />' +
+                '<button type="button" class="btn btn-outline-danger remove-time" onclick="removeTime(this)">删除</button>';
+            timesList.appendChild(div);
+        }
+        
+        // 删除时间点
+        function removeTime(button) {
+            const timesList = document.getElementById('timesList');
+            if (timesList.children.length > 1) {
+                button.closest('.input-group').remove();
+            }
+        }
+        
+        // 表单提交前收集时间点数据
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const scheduleType = document.getElementById('scheduleTypeSelect').value;
+            
+            if (scheduleType === 'daily' || scheduleType === 'monthly') {
+                // 收集时间点
+                const timeInputs = document.querySelectorAll('.time-input');
+                const times = [];
+                timeInputs.forEach(input => {
+                    if (input.value.trim()) {
+                        times.push(input.value.trim());
+                    }
+                });
+                
+                // 创建隐藏字段存储时间点数组
+                times.forEach((time, index) => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = `Times[${index}]`;
+                    input.value = time;
+                    this.appendChild(input);
+                });
+                
+                // 如果是monthly类型，收集月份日期
+                if (scheduleType === 'monthly') {
+                    const monthDaysInput = document.getElementById('monthDaysInput');
+                    if (monthDaysInput.value.trim()) {
+                        const days = monthDaysInput.value.split(',').map(d => d.trim()).filter(d => d);
+                        days.forEach((day, index) => {
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = `MonthDays[${index}]`;
+                            input.value = day;
+                            this.appendChild(input);
+                        });
+                    }
+                }
+            }
+        });
+    </script>
+}
