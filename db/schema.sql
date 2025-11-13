@@ -236,8 +236,8 @@ WHERE NOT EXISTS(
     );
 
 -- 插入默认 SFTP 配置示例
-INSERT INTO sftp_configs (name, host, port, username, auth_type, base_path_template, enabled)
-SELECT 'Default SFTP', 'sftp.example.com', 22, 'user', 'password', '/reports/{yyyy}/{MM}/{dd}/', TRUE
+INSERT INTO sftp_configs (name, host, port, username, auth_type, enabled)
+SELECT 'Default SFTP', 'sftp.example.com', 22, 'user', 'password', TRUE
 WHERE NOT EXISTS(
         SELECT 1 FROM sftp_configs WHERE name = 'Default SFTP'
     );
