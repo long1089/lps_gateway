@@ -6,5 +6,15 @@ ALTER TABLE report_types ADD COLUMN IF NOT EXISTS path_template VARCHAR(500);
 
 COMMENT ON COLUMN report_types.path_template IS '下载路径模板，支持 {yyyy}/{MM}/{dd}/{HH}/{mm}';
 
--- Remove base_path_template column from sftp_configs table
-ALTER TABLE sftp_configs DROP COLUMN IF EXISTS base_path_template;
+-- Remove base_path_template column from sftp_configs table (compatible with older PostgreSQL/OpenGauss)
+DO $$ 
+BEGIN
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'sftp_configs' 
+        AND column_name = 'base_path_template'
+    ) THEN
+        ALTER TABLE sftp_configs DROP COLUMN base_path_template;
+    END IF;
+END $$;
