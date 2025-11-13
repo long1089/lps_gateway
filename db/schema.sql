@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS file_records (
     md5_hash VARCHAR(32),
     download_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(20) NOT NULL DEFAULT 'downloaded',
+    process_session_id VARCHAR(100),
     retention_expires_at TIMESTAMP,
     error_message TEXT,
     metadata JSONB,
@@ -154,6 +155,7 @@ CREATE INDEX idx_file_records_filename ON file_records(original_filename);
 
 COMMENT ON TABLE file_records IS '文件记录表，存储文件元数据';
 COMMENT ON COLUMN file_records.status IS '文件状态 (downloaded/processing/sent/error/expired)';
+COMMENT ON COLUMN file_records.process_session_id IS '处理会话ID（用于独占锁定）';
 COMMENT ON COLUMN file_records.retention_expires_at IS '保留策略过期时间';
 
 -- ============================================================
