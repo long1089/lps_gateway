@@ -79,12 +79,12 @@ public class SchedulesController : Controller
             // 序列化JSON字段
             if (dto.Times != null && dto.Times.Any())
             {
-                schedule.Times = JsonSerializer.Serialize(dto.Times);
+                schedule.Times = dto.Times;
             }
 
             if (dto.MonthDays != null && dto.MonthDays.Any())
             {
-                schedule.MonthDays = JsonSerializer.Serialize(dto.MonthDays);
+                schedule.MonthDays = dto.MonthDays;
             }
 
             if (!string.IsNullOrEmpty(dto.CronExpression))
@@ -128,14 +128,14 @@ public class SchedulesController : Controller
         };
 
         // 反序列化JSON字段
-        if (!string.IsNullOrEmpty(schedule.Times))
+        if (schedule.Times != null)
         {
-            dto.Times = JsonSerializer.Deserialize<List<string>>(schedule.Times);
+            dto.Times = schedule.Times;
         }
 
-        if (!string.IsNullOrEmpty(schedule.MonthDays))
+        if (schedule.MonthDays != null)
         {
-            dto.MonthDays = JsonSerializer.Deserialize<List<int>>(schedule.MonthDays);
+            dto.MonthDays = schedule.MonthDays;
         }
 
         ViewBag.ReportTypes = await _reportTypeRepository.GetAllAsync(true);
@@ -177,7 +177,7 @@ public class SchedulesController : Controller
             // 序列化JSON字段
             if (dto.Times != null && dto.Times.Any())
             {
-                existing.Times = JsonSerializer.Serialize(dto.Times);
+                existing.Times = dto.Times;
             }
             else
             {
@@ -186,7 +186,7 @@ public class SchedulesController : Controller
 
             if (dto.MonthDays != null && dto.MonthDays.Any())
             {
-                existing.MonthDays = JsonSerializer.Serialize(dto.MonthDays);
+                existing.MonthDays = dto.MonthDays;
             }
             else
             {

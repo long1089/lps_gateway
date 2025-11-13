@@ -91,13 +91,14 @@
                             {
                                 <code>@item.CronExpression</code>
                             }
-                            else if (!string.IsNullOrEmpty(item.Times))
+                            else if (item.Times != null)
                             {
-                                <small>时间点: @item.Times</small>
-                                if (!string.IsNullOrEmpty(item.MonthDays))
-                                {
-                                    <br/><small>日期: @item.MonthDays</small>
-                                }
+	                            if (item.MonthDays != null)
+	                            {
+		                            <small>日期：@string.Join("、", item.MonthDays)</small>
+		                            <br />
+	                            }
+                                <small>时间：@string.Join("、", item.Times)</small>
                             }
                             else
                             {

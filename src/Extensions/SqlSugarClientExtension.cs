@@ -1,10 +1,8 @@
 ﻿using LpsGateway.Data.Models;
-using Microsoft.AspNetCore.Http;
-using Newtonsoft.Json;
 using SqlSugar;
 using System.Data;
 using System.Security.Claims;
-using static System.Runtime.InteropServices.Marshalling.IIUnknownCacheStrategy;
+using System.Text.Json;
 
 namespace LpsGateway.Extensions
 {
@@ -17,11 +15,11 @@ namespace LpsGateway.Extensions
             {
                 // 1. 获取表名
                 var tableName = it.BeforeData.FirstOrDefault()?.TableName;
-                if(!string.IsNullOrEmpty(tableName))
+                if (!string.IsNullOrEmpty(tableName))
                 {
                     tableName = it.AfterData.FirstOrDefault()?.TableName;
                 }
-                if(tableName == null)
+                if (tableName == null)
                 {
                     return;
                 }
@@ -47,7 +45,11 @@ namespace LpsGateway.Extensions
                     ipAddress = httpContext.Connection.RemoteIpAddress?.ToString() ?? "未知IP";
                 }
 
-                // 4. 构建审计日志实体
+                // 4. 构建字段变更明细
+                var beforeColumnDict = beforeColumns.ToDictionary(col => col.ColumnName, col => col.Value);
+                var afterColumnDict = afterColumns.ToDictionary(col => col.ColumnName, col => col.Value);
+
+                // 5. 构建审计日志实体
                 var auditLog = new AuditLog
                 {
                     Resource = tableName,
@@ -55,14 +57,8 @@ namespace LpsGateway.Extensions
                     CreatedAt = DateTime.Now,
                     UserId = operatorId,
                     IpAddress = ipAddress,
-                    Details = ""
+                    Details = new AuditLog.AuditLogFieldChange { OldValue = beforeColumnDict, NewValue = afterColumnDict },
                 };
-
-                // 5. 构建字段变更明细
-                var beforeColumnDict = beforeColumns.ToDictionary(col => col.ColumnName,col=>col.Value);
-                var afterColumnDict = afterColumns.ToDictionary(col => col.ColumnName,col=>col.Value);
-
-                auditLog.Details = $"{JsonConvert.SerializeObject(beforeColumnDict, Formatting.Indented)} => {JsonConvert.SerializeObject(afterColumnDict, Formatting.Indented)}";
 
                 // 6. 保存审计日志（使用临时连接，避免事务冲突）
                 using (var tempDb = db.CopyNew())
@@ -109,16 +105,5 @@ namespace LpsGateway.Extensions
             // 示例：获取浏览器信息
             return httpContext?.Request.Headers["User-Agent"].ToString() ?? "未知浏览器";
         }
-    }
-
-
-    public class AuditLogFieldChange
-    {
-        public string AuditLogId { get; set; }
-        public string ColumnName { get; set; }
-        public string ColumnDescription { get; set; }
-        public string OldValue { get; set; }
-        public string NewValue { get; set; }
-        public string FieldType { get; set; }
     }
 }

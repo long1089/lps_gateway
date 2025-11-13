@@ -61,7 +61,7 @@ public class FileRecord
     /// </summary>
     [SugarColumn(Length = 20, IsNullable = false)]
     public string Status { get; set; } = "downloaded";
-    
+
     /// <summary>
     /// 处理会话ID（用于独占锁定）
     /// </summary>
@@ -83,8 +83,8 @@ public class FileRecord
     /// <summary>
     /// 元数据 (JSON)
     /// </summary>
-    [SugarColumn(IsNullable = true, ColumnDataType = "jsonb")]
-    public string? Metadata { get; set; }
+    [SugarColumn(IsNullable = true, IsJson = true)]
+    public object? Metadata { get; set; }
 
     /// <summary>
     /// 创建时间

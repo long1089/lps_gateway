@@ -35,8 +35,8 @@ public class AuditLog
     /// <summary>
     /// 详细信息 (JSON)
     /// </summary>
-    [SugarColumn(IsNullable = true, ColumnDataType = "jsonb")]
-    public string? Details { get; set; }
+    [SugarColumn(IsNullable = true, IsJson = true)]
+    public AuditLogFieldChange? Details { get; set; }
 
     /// <summary>
     /// IP地址
@@ -49,4 +49,11 @@ public class AuditLog
     /// </summary>
     [SugarColumn(IsNullable = false, ColumnName = "created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+
+    public class AuditLogFieldChange
+    {
+        public Dictionary<string, object>? OldValue { get; set; }
+        public Dictionary<string, object>? NewValue { get; set; }
+    }
 }

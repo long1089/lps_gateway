@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     user_id INTEGER,
     action VARCHAR(50) NOT NULL,
     resource VARCHAR(100) NOT NULL,
-    details JSONB,
+    details JSON,
     ip_address VARCHAR(50),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -100,8 +100,8 @@ CREATE TABLE IF NOT EXISTS schedules (
     id SERIAL PRIMARY KEY,
     report_type_id INTEGER NOT NULL,
     schedule_type VARCHAR(20) NOT NULL,
-    times JSONB,
-    month_days JSONB,
+    times JSON,
+    month_days JSON,
     cron_expression VARCHAR(100),
     timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS file_records (
     process_session_id VARCHAR(100),
     retention_expires_at TIMESTAMP,
     error_message TEXT,
-    metadata JSONB,
+    metadata JSON,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (report_type_id) REFERENCES report_types(id) ON DELETE CASCADE,
@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS protocol_command_logs (
     cot VARCHAR(10),
     common_address VARCHAR(20),
     result VARCHAR(20),
-    details JSONB,
+    details JSON,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

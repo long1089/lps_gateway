@@ -62,7 +62,7 @@ public class ScheduleManager : IScheduleManager
     public async Task InitializeAsync()
     {
         _logger.LogInformation("初始化调度器");
-        
+
         var factory = new StdSchedulerFactory();
         _scheduler = await factory.GetScheduler();
 
@@ -115,7 +115,7 @@ public class ScheduleManager : IScheduleManager
         using (var scope = _serviceProvider.CreateScope())
         {
             var scheduleRepository = scope.ServiceProvider.GetRequiredService<IScheduleRepository>();
-            
+
             // 加载所有启用的调度
             var schedules = await scheduleRepository.GetAllAsync();
             var enabledSchedules = schedules.Where(s => s.Enabled).ToList();
@@ -149,7 +149,7 @@ public class ScheduleManager : IScheduleManager
         _logger.LogInformation("手动触发下载任务: ReportTypeId={ReportTypeId}", reportTypeId);
 
         var jobKey = new JobKey($"manual-download-{reportTypeId}", "manual");
-        
+
         var job = JobBuilder.Create<FileDownloadJob>()
             .WithIdentity(jobKey)
             .UsingJobData("ReportTypeId", reportTypeId)
@@ -162,7 +162,7 @@ public class ScheduleManager : IScheduleManager
             .Build();
 
         await _scheduler.ScheduleJob(job, trigger);
-        
+
         _logger.LogInformation("手动下载任务已触发: ReportTypeId={ReportTypeId}", reportTypeId);
     }
 
@@ -177,7 +177,7 @@ public class ScheduleManager : IScheduleManager
         }
 
         var jobKey = new JobKey($"schedule-{schedule.Id}", "scheduled");
-        
+
         var job = JobBuilder.Create<FileDownloadJob>()
             .WithIdentity(jobKey)
             .UsingJobData("ReportTypeId", schedule.ReportTypeId)
@@ -185,7 +185,7 @@ public class ScheduleManager : IScheduleManager
             .Build();
 
         ITrigger trigger;
-        
+
         if (schedule.ScheduleType == "cron" && !string.IsNullOrEmpty(schedule.CronExpression))
         {
             // Cron表达式调度
@@ -194,16 +194,16 @@ public class ScheduleManager : IScheduleManager
                 .WithCronSchedule(schedule.CronExpression)
                 .Build();
         }
-        else if (schedule.ScheduleType == "daily" && !string.IsNullOrEmpty(schedule.Times))
+        else if (schedule.ScheduleType == "daily" && schedule.Times != null)
         {
             // 每日调度（使用第一个时间创建触发器，实际应为每个时间创建）
-            var times = JsonSerializer.Deserialize<List<string>>(schedule.Times);
+            var times = schedule.Times;
             if (times != null && times.Any())
             {
                 var firstTime = times.First();
                 var timeParts = firstTime.Split(':');
-                if (timeParts.Length == 2 && 
-                    int.TryParse(timeParts[0], out var hour) && 
+                if (timeParts.Length == 2 &&
+                    int.TryParse(timeParts[0], out var hour) &&
                     int.TryParse(timeParts[1], out var minute))
                 {
                     trigger = TriggerBuilder.Create()
@@ -226,24 +226,24 @@ public class ScheduleManager : IScheduleManager
                 return;
             }
         }
-        else if (schedule.ScheduleType == "monthly" && !string.IsNullOrEmpty(schedule.MonthDays))
+        else if (schedule.ScheduleType == "monthly" && schedule.MonthDays != null)
         {
             // 月度调度（简化实现，仅支持Cron表达式）
-            var monthDays = JsonSerializer.Deserialize<List<int>>(schedule.MonthDays);
+            var monthDays = schedule.MonthDays;
             if (monthDays != null && monthDays.Any())
             {
                 var firstDay = monthDays.First();
-                var times = !string.IsNullOrEmpty(schedule.Times) ? JsonSerializer.Deserialize<List<string>>(schedule.Times) : null;
+                var times = schedule.Times;
                 var firstTime = times?.FirstOrDefault() ?? "00:00";
                 var timeParts = firstTime.Split(':');
-                
-                if (timeParts.Length == 2 && 
-                    int.TryParse(timeParts[0], out var hour) && 
+
+                if (timeParts.Length == 2 &&
+                    int.TryParse(timeParts[0], out var hour) &&
                     int.TryParse(timeParts[1], out var minute))
                 {
                     // 构造Cron表达式: 秒 分 时 日 月 ? 年
                     var cronExpression = $"0 {minute} {hour} {firstDay} * ?";
-                    
+
                     trigger = TriggerBuilder.Create()
                         .WithIdentity($"trigger-{schedule.Id}", "scheduled")
                         .WithCronSchedule(cronExpression)
@@ -263,14 +263,14 @@ public class ScheduleManager : IScheduleManager
         }
         else
         {
-            _logger.LogWarning("不支持的调度类型或配置无效: ScheduleType={ScheduleType}, ScheduleId={ScheduleId}", 
+            _logger.LogWarning("不支持的调度类型或配置无效: ScheduleType={ScheduleType}, ScheduleId={ScheduleId}",
                 schedule.ScheduleType, schedule.Id);
             return;
         }
 
         await _scheduler.ScheduleJob(job, trigger);
-        
-        _logger.LogInformation("已添加调度: ScheduleId={ScheduleId}, Type={ScheduleType}", 
+
+        _logger.LogInformation("已添加调度: ScheduleId={ScheduleId}, Type={ScheduleType}",
             schedule.Id, schedule.ScheduleType);
     }
 

@@ -29,13 +29,13 @@
                 <label for="action" class="form-label">操作类型</label>
                 <select name="action" id="action" class="form-select">
                     <option value="">全部</option>
-                    <option value="Login" selected="@(action == "Login")">登录</option>
-                    <option value="Logout" selected="@(action == "Logout")">登出</option>
-                    <option value="Create" selected="@(action == "Create")">创建</option>
-                    <option value="Update" selected="@(action == "Update")">更新</option>
-                    <option value="Delete" selected="@(action == "Delete")">删除</option>
-                    <option value="Download" selected="@(action == "Download")">下载</option>
-                    <option value="Upload" selected="@(action == "Upload")">上传</option>
+                    <option value="Login" selected="@(action == "LOGIN")">登录</option>
+                    <option value="Logout" selected="@(action == "LOGOUT")">登出</option>
+                    <option value="Create" selected="@(action == "CREATE")">创建</option>
+                    <option value="Update" selected="@(action == "UPDATE")">更新</option>
+                    <option value="Delete" selected="@(action == "DELETE")">删除</option>
+                    <option value="Download" selected="@(action == "DOWNLOAD")">下载</option>
+                    <option value="Upload" selected="@(action == "UPLOAD")">上传</option>
                 </select>
             </div>
             <div class="col-md-4">
@@ -86,7 +86,7 @@
                                 <td>@log.Resource</td>
                                 <td>@(log.IpAddress ?? "-")</td>
                                 <td>
-                                    @if (!string.IsNullOrEmpty(log.Details))
+                                    @if (log.Details != null)
                                     {
                                         <button type="button" class="btn btn-sm btn-outline-secondary" 
                                                 data-bs-toggle="modal" 

@@ -29,14 +29,14 @@ public class Schedule
     /// <summary>
     /// 时间点列表 JSON，如 ["08:00","11:15"]
     /// </summary>
-    [SugarColumn(IsNullable = true, ColumnDataType = "jsonb")]
-    public string? Times { get; set; }
+    [SugarColumn(IsNullable = true, IsJson = true)]
+    public List<string>? Times { get; set; }
 
     /// <summary>
     /// 月份中的日期 JSON，如 [1,10,20]
     /// </summary>
-    [SugarColumn(IsNullable = true, ColumnDataType = "jsonb", ColumnName = "month_days")]
-    public string? MonthDays { get; set; }
+    [SugarColumn(IsNullable = true, IsJson = true, ColumnName = "month_days")]
+    public List<int>? MonthDays { get; set; }
 
     /// <summary>
     /// Cron表达式
